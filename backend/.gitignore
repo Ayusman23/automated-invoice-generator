@@ -1,0 +1,21 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Uploads & Generated PDFs
+generated_pdfs/*
+!generated_pdfs/.gitkeep
+uploads/*
+!uploads/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# WhatsApp session data (contains private keys — never commit)
+wa_auth/
+.wwebjs_auth/
