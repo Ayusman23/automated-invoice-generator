@@ -16,6 +16,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "google-tts-api": "^2.0.2",
+    "mongodb": "^7.5.0",
     "mongoose": "^9.9.2",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.5",
