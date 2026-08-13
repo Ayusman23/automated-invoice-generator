@@ -221,10 +221,10 @@ async function getReadyClient(userId) {
 }
 
 function normalisePhone(phone) {
-    let clean = String(phone || '').trim().replace(/\s+/g, '');
+    let clean = String(phone || '').trim();
     if (clean.startsWith('whatsapp:')) clean = clean.replace('whatsapp:', '');
-    if (clean.startsWith('+'))         clean = clean.substring(1);
-    if (clean.length === 10)           clean = `91${clean}`;
+    clean = clean.replace(/[^0-9]/g, '');
+    if (clean.length === 10) clean = `91${clean}`;
     return `${clean}@c.us`;
 }
 

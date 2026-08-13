@@ -199,7 +199,15 @@ app.get('/api/invoices/:id', async (req, res) => {
 // ── POST /api/invoices/:id/resend — Resend WhatsApp & Email notifications ───
 app.post('/api/invoices/:id/resend', requireAuth, async (req, res) => {
     try {
-        const invoice = await Invoice.findOne({ _id: req.params.id, userId: req.user });
+        let invoice = await Invoice.findOne({ _id: req.params.id, userId: req.user });
+        if (!invoice) {
+            // Legacy invoice fallback (created prior to authentication)
+            invoice = await Invoice.findById(req.params.id);
+            if (invoice && !invoice.userId) {
+                invoice.userId = req.user;
+                await invoice.save();
+            }
+        }
         if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
 
         const user = await User.findById(req.user);
@@ -225,10 +233,10 @@ app.post('/api/invoices/:id/resend', requireAuth, async (req, res) => {
             console.error('⚠️  Resend WhatsApp failed:', e.message)
         );
 
-        res.status(200).json({ success: true, message: 'Invoice resent successfully!' });
+        res.status(200).json({ success: true, message: 'Invoice dispatched to WhatsApp & Email!' });
     } catch (error) {
         console.error('Resend failed:', error);
-        res.status(500).json({ message: 'Failed to resend invoice', error: error.message });
+        res.status(500).json({ message: 'Failed to send invoice', error: error.message });
     }
 });
 
