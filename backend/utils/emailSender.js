@@ -4,19 +4,33 @@ const { generateInvoicePDF } = require('./pdfGenerator');
 const { sendRawWhatsApp, sendWhatsAppVoiceNote, sendWhatsAppPdf } = require('./whatsapp'); // wppconnect helper
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 //  Shared helpers
 // ─────────────────────────────────────────────────────────────────────────────
-function createTransporter() {
-  // Google shows App Passwords as 'xxxx xxxx xxxx xxxx' but SMTP auth needs
-  // the raw 16-char string without spaces — strip them here defensively.
-  const user = (process.env.GMAIL_USER          || '').trim();
-  const pass = (process.env.GMAIL_APP_PASSWORD  || '').replace(/\s+/g, '');
+function createTransporter(user = null) {
+  if (user && user.googleRefreshToken) {
+      return nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+              type: 'OAuth2',
+              user: user.email,
+              clientId: process.env.GOOGLE_CLIENT_ID,
+              clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+              refreshToken: user.googleRefreshToken,
+              accessToken: user.googleAccessToken
+          }
+      });
+  }
+
+  // Fallback to global config (useful if admin creates without logging in, etc)
+  const fallbackUser = (process.env.GMAIL_USER          || '').trim();
+  const fallbackPass = (process.env.GMAIL_APP_PASSWORD  || '').replace(/\s+/g, '');
 
   return nodemailer.createTransport({
     host:   'smtp.gmail.com',
     port:   465,
-    secure: true,           // SSL — more reliable than the generic 'service:gmail'
-    auth:   { user, pass },
+    secure: true,
+    auth:   { user: fallbackUser, pass: fallbackPass },
   });
 }
 
@@ -29,14 +43,18 @@ function createTransporter() {
  * @param {string} pdfPath     - Absolute path to the PDF file.
  * @param {Object} invoice     - Mongoose invoice document.
  * @param {string} paymentLink - The unique /pay/:id URL to include.
+ * @param {Object} user        - The user sending the email.
  */
-async function sendInvoiceEmail(toEmail, pdfPath, invoice = {}, paymentLink = '') {
-  const transporter    = createTransporter();
+async function sendInvoiceEmail(toEmail, pdfPath, invoice = {}, paymentLink = '', user = null) {
+  const transporter    = createTransporter(user);
   const invoiceIdShort = invoice._id ? String(invoice._id).slice(-8).toUpperCase() : '';
   const amountFmt      = invoice.amount ? Number(invoice.amount).toLocaleString('en-IN') : '';
 
+  const senderEmail = user ? user.email : process.env.GMAIL_USER;
+  const senderName  = user ? user.name : "Invoice Generator Pro";
+
   await transporter.sendMail({
-    from:    `"Invoice Generator Pro" <${process.env.GMAIL_USER}>`,
+    from:    `"${senderName}" <${senderEmail}>`,
     to:      toEmail,
     subject: `🧾 Invoice #${invoiceIdShort} — ₹${amountFmt} Due`,
     html: `
@@ -131,8 +149,9 @@ async function sendInvoiceEmail(toEmail, pdfPath, invoice = {}, paymentLink = ''
  * Fires after invoice is marked PAID. Regenerates the PDF with PAID stamp,
  * sends a success email receipt, and a WhatsApp confirmation.
  * @param {Object} invoice - Mongoose invoice document (status already 'PAID').
+ * @param {Object} user    - The user sending the email.
  */
-async function sendPaymentReceiptNotification(invoice) {
+async function sendPaymentReceiptNotification(invoice, user = null) {
   const invoiceIdShort = String(invoice._id).slice(-8).toUpperCase();
   const amountFmt      = Number(invoice.amount).toLocaleString('en-IN');
   const dateFmt        = new Date().toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
@@ -148,8 +167,11 @@ async function sendPaymentReceiptNotification(invoice) {
 
   // ── 2. Email ─────────────────────────────────────────────────────────────
   try {
-    await createTransporter().sendMail({
-      from:    `"Invoice Generator Pro" <${process.env.GMAIL_USER}>`,
+    const senderEmail = user ? user.email : process.env.GMAIL_USER;
+    const senderName  = user ? user.name : "Invoice Generator Pro";
+    
+    await createTransporter(user).sendMail({
+      from:    `"${senderName}" <${senderEmail}>`,
       to:      invoice.email,
       subject: `✅ Payment Successful! — Invoice #${invoiceIdShort}`,
       html: `
@@ -217,15 +239,19 @@ async function sendPaymentReceiptNotification(invoice) {
  *
  * @param {Object} invoice     - Mongoose invoice document (status stays 'UNPAID').
  * @param {string} paymentLink - The unique /pay/:id URL so client can retry.
+ * @param {Object} user        - The user sending the email.
  */
-async function sendPaymentFailedNotification(invoice, paymentLink = '') {
+async function sendPaymentFailedNotification(invoice, paymentLink = '', user = null) {
   const invoiceIdShort = String(invoice._id).slice(-8).toUpperCase();
   const amountFmt      = Number(invoice.amount).toLocaleString('en-IN');
 
   // ── Email ──────────────────────────────────────────────────────────────────
   try {
-    await createTransporter().sendMail({
-      from:    `"Invoice Generator Pro" <${process.env.GMAIL_USER}>`,
+    const senderEmail = user ? user.email : process.env.GMAIL_USER;
+    const senderName  = user ? user.name : "Invoice Generator Pro";
+
+    await createTransporter(user).sendMail({
+      from:    `"${senderName}" <${senderEmail}>`,
       to:      invoice.email,
       subject: `⚠️ Payment Failed — Invoice #${invoiceIdShort}`,
       html: `

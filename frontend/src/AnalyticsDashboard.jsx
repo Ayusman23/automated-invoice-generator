@@ -41,9 +41,8 @@ export default function AnalyticsDashboard() {
   const [error, setError]     = useState('');
 
   useEffect(() => {
-    fetch(`${API}/api/analytics/summary`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
+    API.get('/api/analytics/summary')
+      .then(r => { setData(r.data); setLoading(false); })
       .catch(() => { setError('Could not load analytics.'); setLoading(false); });
   }, []);
 

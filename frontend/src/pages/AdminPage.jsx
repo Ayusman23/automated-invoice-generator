@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import AnalyticsDashboard from '../AnalyticsDashboard';
+import { useAuth } from '../context/AuthContext';
 import API from '../api';
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -116,6 +118,54 @@ const emptyItem = () => ({ name: '', qty: 1, price: '' });
 // ─────────────────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  // ── WhatsApp state ────────────────────────────────────────────────────────
+  const [waSocket,   setWaSocket]   = useState(null);
+  const [waStatus,   setWaStatus]   = useState('DISCONNECTED');
+  const [waQr,       setWaQr]       = useState(null);
+  const [waExpanded, setWaExpanded] = useState(false);
+
+  useEffect(() => {
+    const s = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+    setWaSocket(s);
+    if (user?._id) {
+      s.emit('get-whatsapp-status', { userId: user._id });
+    }
+    s.on('whatsapp-qr', (d) => {
+      if (!d.userId || d.userId === user?._id) {
+        setWaQr(d.qr);
+        setWaStatus('QR_READY');
+      }
+    });
+    s.on('whatsapp-status', (d) => {
+      if (!d.userId || d.userId === user?._id) {
+        setWaStatus(d.status);
+        if (d.status === 'READY') setWaQr(null);
+      }
+    });
+    return () => s.close();
+  }, [user]);
+
+  const startWhatsApp = () => {
+    if (waSocket && user) {
+      setWaStatus('INITIALIZING');
+      waSocket.emit('start-whatsapp', { userId: user._id });
+    }
+  };
+
+  const disconnectWhatsApp = () => {
+    if (waSocket && user) {
+      waSocket.emit('disconnect-whatsapp', { userId: user._id });
+      setWaStatus('DISCONNECTED');
+      setWaQr(null);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   // Form state
   const [clientName,  setClientName]  = useState('');
@@ -157,9 +207,8 @@ export default function AdminPage() {
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchInvoices = useCallback(async () => {
     try {
-      const res  = await fetch(`${API}/api/invoices`);
-      const data = await res.json();
-      setInvoices(data);
+      const res = await API.get('/api/invoices');
+      setInvoices(res.data);
     } catch { console.error('Could not fetch invoices'); }
   }, []);
 
@@ -168,10 +217,8 @@ export default function AdminPage() {
   // ── Risk prediction ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!debouncedClient && !debouncedAmount) { setRisk(null); return; }
-    fetch(`${API}/api/risk/predict`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientName: debouncedClient, amount: debouncedAmount, itemName: debouncedItem }),
-    }).then(r => r.json()).then(d => setRisk(d)).catch(() => setRisk(null));
+    API.post('/api/risk/predict', { clientName: debouncedClient, amount: debouncedAmount, itemName: debouncedItem })
+      .then(r => setRisk(r.data)).catch(() => setRisk(null));
   }, [debouncedClient, debouncedAmount, debouncedItem]);
 
   // ── Notifications ─────────────────────────────────────────────────────────
@@ -207,16 +254,14 @@ export default function AdminPage() {
         amount: totalAmount,
         itemName: items.map(it => it.name.trim()).join(', '),
       };
-      const res = await fetch(`${API}/api/invoices`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        notify('Invoice created! Email dispatched with payment link.');
-        setClientName(''); setEmail(''); setPhone(''); setItems([emptyItem()]); setRisk(null);
-        fetchInvoices();
-      } else { notify('Failed to save invoice.', 'error'); }
-    } catch { notify('Server not responding.', 'error'); }
+      await API.post('/api/invoices', payload);
+      notify('Invoice created! Email dispatched with payment link.');
+      setClientName(''); setEmail(''); setPhone(''); setItems([emptyItem()]); setRisk(null);
+      fetchInvoices();
+    } catch (err) {
+      const msg = err?.response?.data?.message || 'Failed to save invoice.';
+      notify(msg, 'error');
+    }
     finally { setSubmitting(false); }
   };
 
@@ -224,12 +269,10 @@ export default function AdminPage() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await fetch(`${API}/api/invoices/${deleteTarget._id}`, { method: 'DELETE' });
-      if (res.ok) {
-        notify(`Invoice for ${deleteTarget.clientName} deleted.`);
-        fetchInvoices();
-      } else { notify('Failed to delete invoice.', 'error'); }
-    } catch { notify('Server not responding.', 'error'); }
+      await API.delete(`/api/invoices/${deleteTarget._id}`);
+      notify(`Invoice for ${deleteTarget.clientName} deleted.`);
+      fetchInvoices();
+    } catch { notify('Failed to delete invoice.', 'error'); }
     finally { setDeleteTarget(null); }
   };
 
@@ -240,11 +283,11 @@ export default function AdminPage() {
     setOcrLoading(true); notify('Scanning image...', 'info');
     const fd = new FormData(); fd.append('image', file);
     try {
-      const res  = await fetch(`${API}/api/ocr/scan`, { method: 'POST', body: fd });
-      if (!res.ok) throw new Error('OCR API failed');
+      const res = await API.post('/api/ocr/scan', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const data = res.data;
+      if (!data) throw new Error('OCR API failed');
       
-      const data = await res.json();
-      
+
       // Update basic fields
       if (data.client_name)   setClientName(data.client_name);
       if (data.email_address) setEmail(data.email_address);
@@ -311,6 +354,16 @@ export default function AdminPage() {
       .then(() => notify('Payment link copied to clipboard.'));
   };
 
+  const handleResendInvoice = async (id) => {
+    try {
+      notify('Sending invoice via WhatsApp & Email…', 'info');
+      await api.post(`/api/invoices/${id}/resend`);
+      notify('Invoice dispatched to WhatsApp & Email!', 'success');
+    } catch (err) {
+      notify(err.response?.data?.message || 'Failed to send invoice', 'error');
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   const notifyBg   = { success: '#F0FDF4', error: '#FEF2F2', info: '#EFF6FF' };
   const notifyText = { success: '#166534', error: '#991B1B', info: '#1E40AF' };
@@ -329,6 +382,7 @@ export default function AdminPage() {
         @keyframes toastIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
         @keyframes fadeIn  { from { opacity:0; } to { opacity:1; } }
         @keyframes modalIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
+        @keyframes spin    { to { transform: rotate(360deg); } }
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: ${C.bg}; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 4px; }
@@ -337,23 +391,48 @@ export default function AdminPage() {
       {/* ── Top Nav Bar ──────────────────────────────────────────────────── */}
       <header style={{
         background: C.surface, borderBottom: `1px solid ${C.border}`,
-        padding: '0 32px', height: '60px',
+        padding: '0 32px', height: '64px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         position: 'sticky', top: 0, zIndex: 100,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
       }}>
+        {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ width: '30px', height: '30px', background: C.primary, borderRadius: '8px',
+          <div style={{ width: '32px', height: '32px', background: 'linear-gradient(135deg,#2563EB,#7C3AED)', borderRadius: '8px',
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
             ⚡
           </div>
-          <span style={{ fontWeight: 700, fontSize: '16px', color: C.textPrimary }}>InvoicePro</span>
+          <span style={{ fontWeight: 800, fontSize: '17px', color: C.textPrimary }}>InvoicePro</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ ...badge('unpaid'), background: '#EFF6FF', color: C.primary, border: `1px solid #BFDBFE` }}>
-            🔐 Admin Portal
-          </span>
+
+        {/* Right: user info + actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {user && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '34px', height: '34px', borderRadius: '50%',
+                  background: 'linear-gradient(135deg,#2563EB,#7C3AED)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', fontWeight: 700, fontSize: '13px', flexShrink: 0,
+                }}>
+                  {(user.name || user.email || '?')[0].toUpperCase()}
+                </div>
+                <div style={{ lineHeight: 1.2 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: C.textPrimary }}>{user.name || 'Admin'}</div>
+                  <div style={{ fontSize: '11px', color: C.textMuted }}>{user.email}</div>
+                </div>
+              </div>
+              <div style={{ width: '1px', height: '28px', background: C.border }} />
+            </>
+          )}
           <button onClick={fetchInvoices} style={btnSecondary}>↻ Refresh</button>
+          <button onClick={handleLogout} style={{
+            ...btnSecondary,
+            color: C.danger, borderColor: C.dangerBorder, background: C.dangerBg,
+          }}>
+            🚪 Logout
+          </button>
         </div>
       </header>
 
@@ -586,11 +665,109 @@ Total:  11200`}
               {submitting ? 'Creating...' : '+ Generate Invoice'}
             </button>
           </form>
+        </div>{/* end invoice form card */}
+
+        {/* ───────────────────────────────────────────────────────────────
+            WHATSAPP QR PANEL
+        ═══════════════════════════════════════════════════════════════ */}
+        <div style={{ ...card, width: '380px', minWidth: '320px', flexShrink: 0, overflow: 'hidden' }}>
+          {/* Collapsible header */}
+          <button
+            onClick={() => setWaExpanded(v => !v)}
+            style={{
+              width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+              padding: '16px 20px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              fontFamily: 'Inter, sans-serif',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '20px' }}>📱</span>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 700, fontSize: '14px', color: C.textPrimary }}>WhatsApp</div>
+                <div style={{ fontSize: '11px', color: C.textMuted, marginTop: '1px' }}>
+                  {waStatus === 'READY' ? 'Connected ✅' : waStatus === 'INITIALIZING' ? 'Starting...' : waStatus === 'QR_READY' ? 'Scan QR to connect' : 'Not connected'}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{
+                ...badge(waStatus === 'READY' ? 'paid' : 'unpaid'),
+                fontSize: '10px',
+              }}>
+                {waStatus === 'READY' ? 'Live' : waStatus === 'INITIALIZING' ? 'Loading' : waStatus === 'QR_READY' ? 'Scan QR' : 'Offline'}
+              </span>
+              <span style={{ color: C.textMuted, fontSize: '12px', transition: 'transform 0.2s', transform: waExpanded ? 'rotate(180deg)' : 'none' }}>▼</span>
+            </div>
+          </button>
+
+          {/* Expandable body */}
+          {waExpanded && (
+            <div style={{ padding: '0 20px 20px', borderTop: `1px solid ${C.border}` }}>
+              <p style={{ fontSize: '13px', color: C.textSecondary, margin: '16px 0 14px', lineHeight: 1.6 }}>
+                Link your WhatsApp to automatically send invoices and payment receipts to your clients.
+              </p>
+
+              {/* Status: DISCONNECTED / ERROR */}
+              {(waStatus === 'DISCONNECTED' || waStatus === 'AUTH_FAILED' || waStatus === 'ERROR') && (
+                <button onClick={startWhatsApp} style={{ ...btnPrimary, width: '100%', justifyContent: 'center', background: '#25D366', boxShadow: '0 2px 8px rgba(37,211,102,0.3)' }}>
+                  📱 Connect WhatsApp
+                </button>
+              )}
+
+              {/* Status: INITIALIZING */}
+              {waStatus === 'INITIALIZING' && (
+                <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                  <div style={{
+                    width: '36px', height: '36px', border: '3px solid #25D366',
+                    borderTopColor: 'transparent', borderRadius: '50%',
+                    animation: 'spin 0.8s linear infinite', margin: '0 auto 12px',
+                  }} />
+                  <p style={{ fontSize: '13px', color: C.textSecondary }}>Generating QR Code...</p>
+                </div>
+              )}
+
+              {/* Status: QR_READY — show QR */}
+              {waStatus === 'QR_READY' && waQr && (
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ fontSize: '12px', color: C.textSecondary, marginBottom: '12px', lineHeight: 1.5 }}>
+                    Open WhatsApp on your phone → <strong>Linked Devices</strong> → <strong>Link a Device</strong> → scan this QR:
+                  </p>
+                  <div style={{
+                    display: 'inline-block', padding: '12px', background: '#fff',
+                    border: `2px solid #25D366`, borderRadius: '12px',
+                    boxShadow: '0 4px 12px rgba(37,211,102,0.2)',
+                  }}>
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(waQr)}&color=000000&bgcolor=FFFFFF`}
+                      alt="WhatsApp QR Code"
+                      style={{ display: 'block', borderRadius: '4px' }}
+                    />
+                  </div>
+                  <p style={{ fontSize: '11px', color: C.textMuted, marginTop: '10px' }}>QR refreshes automatically. Keep this window open.</p>
+                </div>
+              )}
+
+              {/* Status: READY */}
+              {waStatus === 'READY' && (
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '42px', marginBottom: '8px' }}>🟢</div>
+                  <p style={{ fontSize: '14px', fontWeight: 600, color: '#166534', marginBottom: '4px' }}>WhatsApp Connected!</p>
+                  <p style={{ fontSize: '12px', color: C.textSecondary, marginBottom: '16px' }}>
+                    Invoices will be automatically sent via WhatsApp.
+                  </p>
+                  <button onClick={disconnectWhatsApp} style={{
+                    ...btnSecondary, width: '100%', justifyContent: 'center',
+                    color: C.danger, borderColor: C.dangerBorder, background: C.dangerBg,
+                  }}>
+                    Disconnect
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            RIGHT PANEL — Dashboard
-        ═══════════════════════════════════════════════════════════════ */}
         <div style={{ flex: 1, minWidth: '300px' }}>
 
           {/* Tab Navigation */}
@@ -683,6 +860,11 @@ Total:  11200`}
 
                           {/* Actions */}
                           <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                            <button id={`btn-resend-${inv._id}`} onClick={() => handleResendInvoice(inv._id)}
+                              style={{ ...btnSecondary, padding: '5px 10px', fontSize: '12px', color: '#16A34A', borderColor: '#BBF7D0', background: '#F0FDF4' }}
+                              title="Send / Resend invoice to WhatsApp & Email">
+                              📱 Send
+                            </button>
                             <button id={`btn-openPay-${inv._id}`} onClick={() => navigate(`/pay/${inv._id}`)}
                               style={{ ...btnSecondary, padding: '5px 10px', fontSize: '12px' }}>
                               🔗 Pay

@@ -1,8 +1,15 @@
 node_modules
 wa_auth
+wa_auth_test
 .wwebjs_auth
 .wwebjs_cache
+generated_pdfs/*
+!generated_pdfs/.gitkeep
+uploads/*
+!uploads/.gitkeep
 npm-debug.log
 Dockerfile
 .dockerignore
 .env
+.env.*
+Secrets

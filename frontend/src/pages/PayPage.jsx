@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import API from '../api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 // ─── Design Tokens (same system as AdminPage) ─────────────────────────────────
 const C = {
@@ -40,7 +40,7 @@ export default function PayPage() {
   const [notification, setNotification] = useState(null);
 
   useEffect(() => {
-    fetch(`${API}/api/invoices/${invoiceId}`)
+    fetch(`${API_BASE}/api/invoices/${invoiceId}`)
       .then(r => { if (!r.ok) throw new Error('Invoice not found'); return r.json(); })
       .then(d  => { setInvoice(d); if (d.status === 'PAID') setPayStatus('success'); })
       .catch(e => setErrorMsg(e.message))
@@ -57,7 +57,7 @@ export default function PayPage() {
     if (!loaded) { notify('Razorpay could not load. Check your connection.', 'error'); return; }
     setPayStatus('processing');
     try {
-      const res  = await fetch(`${API}/api/payment/create`, {
+      const res  = await fetch(`${API_BASE}/api/payment/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoiceId }),
       });
@@ -80,7 +80,7 @@ export default function PayPage() {
           notify('Verifying payment…');
           // Call our verify endpoint directly — no webhook needed for localhost
           try {
-            const vRes = await fetch(`${API}/api/payment/verify`, {
+            const vRes = await fetch(`${API_BASE}/api/payment/verify`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -118,7 +118,7 @@ export default function PayPage() {
     if (attempts > 12) { setPayStatus('failed'); notify('Verification timed out. Contact support if charged.', 'error'); return; }
     setTimeout(async () => {
       try {
-        const res  = await fetch(`${API}/api/invoices/${invoiceId}`);
+        const res  = await fetch(`${API_BASE}/api/invoices/${invoiceId}`);
         const data = await res.json();
         if (data.status === 'PAID') { setInvoice(data); setPayStatus('success'); }
         else pollForPaidStatus(attempts + 1);

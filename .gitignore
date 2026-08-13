@@ -6,6 +6,8 @@
 atlas-credentials.env
 rzp-key.csv
 twilio_2FA_recovery_code.txt
+Secrets/
+**/Secrets/
 *.pem
 *.key
 *.p12
@@ -15,20 +17,26 @@ node_modules/
 backend/node_modules/
 frontend/node_modules/
 
-# Generated files & uploads (keep directories clean)
+# Generated files & uploads
 backend/generated_pdfs/*
 !backend/generated_pdfs/.gitkeep
 backend/uploads/*
 !backend/uploads/.gitkeep
 
-# WhatsApp Authentication Sessions
+# WhatsApp Authentication & Sessions
 backend/wa_auth/
+backend/wa_auth_test/
+wa_auth/
+wa_auth_test/
 .wwebjs_auth/
 .wwebjs_cache/
+backend/.wwebjs_auth/
+backend/.wwebjs_cache/
 
 # Build outputs
 frontend/dist/
 frontend/dist-ssr/
+dist/
 build/
 
 # Logs

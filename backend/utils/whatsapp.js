@@ -1,86 +1,240 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { Client, NoAuth, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
+const path = require('path');
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let client = null;
-let isReady = false;
+// Map of active WhatsApp clients keyed by userId
+const activeClients = new Map();
+let socketIo = null;
 
-// ── initWhatsApp ──────────────────────────────────────────────────────────────
-/**
- * Initialises the whatsapp-web.js client.
- * Uses LocalAuth to persist the session automatically.
- */
-function initWhatsApp() {
-    console.log('🔄 Initialising WhatsApp Web Client...');
-    
+// Idle timeout for WhatsApp clients (30 minutes)
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+function initWhatsApp(io) {
+    socketIo = io;
+
+    io.on('connection', (socket) => {
+        console.log(`Socket connected: ${socket.id}`);
+
+        socket.on('start-whatsapp', async ({ userId }) => {
+            if (!userId) return;
+            startClient(userId, socket);
+        });
+
+        socket.on('disconnect-whatsapp', async ({ userId }) => {
+            if (!userId) return;
+            disconnectClient(userId);
+            socket.emit('whatsapp-status', { status: 'DISCONNECTED' });
+            if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'DISCONNECTED' });
+        });
+
+        socket.on('get-whatsapp-status', ({ userId }) => {
+            if (!userId) return;
+            if (activeClients.has(userId)) {
+                const clientData = activeClients.get(userId);
+                if (clientData.isReady) {
+                    socket.emit('whatsapp-status', { status: 'READY' });
+                } else if (clientData.lastQr) {
+                    socket.emit('whatsapp-qr', { qr: clientData.lastQr });
+                    socket.emit('whatsapp-status', { status: 'QR_READY', qr: clientData.lastQr });
+                } else if (clientData.isInitializing) {
+                    socket.emit('whatsapp-status', { status: 'INITIALIZING' });
+                }
+            }
+        });
+    });
+}
+
+async function startClient(userId, socket) {
+    if (activeClients.has(userId)) {
+        const existing = activeClients.get(userId);
+        if (existing.isReady) {
+            socket.emit('whatsapp-status', { status: 'READY' });
+            return;
+        }
+        if (existing.isInitializing) {
+            if (existing.lastQr) {
+                socket.emit('whatsapp-qr', { qr: existing.lastQr });
+                socket.emit('whatsapp-status', { status: 'QR_READY', qr: existing.lastQr });
+            } else {
+                socket.emit('whatsapp-status', { status: 'INITIALIZING' });
+            }
+            return;
+        }
+        // If an old non-ready client exists, destroy it before restarting
+        try {
+            if (existing.client) await existing.client.destroy();
+        } catch (e) {}
+        activeClients.delete(userId);
+        await new Promise(r => setTimeout(r, 1000));
+    }
+
+    console.log(`🔄 Starting WhatsApp client for user: ${userId}`);
+    socket.emit('whatsapp-status', { status: 'INITIALIZING' });
+    if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'INITIALIZING' });
+
     const puppeteerConfig = {
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        headless: true,
+        protocolTimeout: 120000,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-extensions'
+        ],
     };
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
         puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
     }
 
-    client = new Client({
-        authStrategy: new LocalAuth({
-            dataPath: './wa_auth'
-        }),
-        puppeteer: puppeteerConfig
+    const client = new Client({
+        authStrategy: new NoAuth(),
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        puppeteer: puppeteerConfig,
+        webVersionCache: {
+            type: 'none',
+        }
     });
 
+    const clientData = {
+        client,
+        isReady: false,
+        isInitializing: true,
+        lastQr: null,
+        timeout: null
+    };
+    activeClients.set(userId, clientData);
+
+    const resetIdleTimeout = () => {
+        if (clientData.timeout) clearTimeout(clientData.timeout);
+        clientData.timeout = setTimeout(() => {
+            console.log(`💤 Idle timeout reached for user ${userId}, destroying client to save RAM.`);
+            try { client.destroy(); } catch (e) {}
+            activeClients.delete(userId);
+        }, IDLE_TIMEOUT_MS);
+    };
+
     client.on('qr', (qr) => {
-        console.log('\n📱 Scan this QR code in WhatsApp:\n   ⋮ (3 dots) → Linked Devices → Link a Device\n');
-        qrcode.generate(qr, { small: true });
+        clientData.lastQr = qr;
+        console.log(`\n📱 Scan this QR code in WhatsApp for user: ${userId}`);
+        try {
+            qrcode.generate(qr, { small: true });
+        } catch (e) {}
+        socket.emit('whatsapp-qr', { qr });
+        socket.emit('whatsapp-status', { status: 'QR_READY', qr });
+        if (socketIo) {
+            socketIo.emit('whatsapp-qr', { userId, qr });
+            socketIo.emit('whatsapp-status', { userId, status: 'QR_READY', qr });
+        }
     });
 
     client.on('ready', () => {
-        isReady = true;
-        console.log('✅ WhatsApp connected and ready!');
+        clientData.isReady = true;
+        clientData.isInitializing = false;
+        clientData.lastQr = null;
+        console.log(`✅ WhatsApp ready for user: ${userId}`);
+        socket.emit('whatsapp-status', { status: 'READY' });
+        if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'READY' });
+        resetIdleTimeout();
     });
 
     client.on('authenticated', () => {
-        console.log('✅ WhatsApp authenticated successfully');
+        console.log(`✅ WhatsApp authenticated for user: ${userId}`);
     });
 
     client.on('auth_failure', (msg) => {
-        console.error('⚠️ WhatsApp authentication failure:', msg);
-        isReady = false;
+        console.error(`⚠️ WhatsApp auth failure for user ${userId}:`, msg);
+        socket.emit('whatsapp-status', { status: 'AUTH_FAILED' });
+        if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'AUTH_FAILED' });
+        try { client.destroy(); } catch (e) {}
+        activeClients.delete(userId);
     });
 
     client.on('disconnected', (reason) => {
-        console.log('⚠️ WhatsApp client was disconnected:', reason);
-        isReady = false;
-        // Optionally auto-reconnect or require user to restart server to get new QR
+        console.log(`⚠️ WhatsApp disconnected for user ${userId}:`, reason);
+        socket.emit('whatsapp-status', { status: 'DISCONNECTED' });
+        if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'DISCONNECTED' });
+        if (clientData.timeout) clearTimeout(clientData.timeout);
+        try { client.destroy(); } catch (e) {}
+        activeClients.delete(userId);
     });
 
-    client.initialize().catch(err => {
-        console.error('⚠️ WhatsApp initialization error:', err.message);
-    });
+    try {
+        await client.initialize();
+    } catch (err) {
+        console.error(`⚠️ WhatsApp init error for user ${userId}:`, err.message);
+        try { await client.destroy(); } catch (e) {}
+        activeClients.delete(userId);
+
+        // Clear corrupted session directory so retry works cleanly
+        const sessionPath = path.join(__dirname, '..', 'wa_auth', `session-${userId}`);
+        if (fs.existsSync(sessionPath)) {
+            try { fs.rmSync(sessionPath, { recursive: true, force: true }); } catch (e) {}
+        }
+
+        socket.emit('whatsapp-status', { status: 'ERROR', error: err.message });
+        if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'ERROR', error: err.message });
+    }
 }
 
-// ── Phone number normaliser ───────────────────────────────────────────────────
+function disconnectClient(userId) {
+    if (activeClients.has(userId)) {
+        const clientData = activeClients.get(userId);
+        clientData.client.logout().catch(e => console.log(e));
+        clientData.client.destroy().catch(e => console.log(e));
+        if (clientData.timeout) clearTimeout(clientData.timeout);
+        activeClients.delete(userId);
+        console.log(`🛑 Logged out WhatsApp for user: ${userId}`);
+    }
+}
+
+async function getReadyClient(userId) {
+    if (userId && activeClients.has(userId)) {
+        const clientData = activeClients.get(userId);
+        if (clientData.isReady) {
+            if (clientData.timeout) clearTimeout(clientData.timeout);
+            clientData.timeout = setTimeout(() => {
+                console.log(`💤 Idle timeout reached for user ${userId}, destroying client.`);
+                clientData.client.destroy();
+                activeClients.delete(userId);
+            }, IDLE_TIMEOUT_MS);
+            return clientData.client;
+        }
+    }
+    // Fallback: If only 1 ready client exists across all users, use it
+    for (const [uid, clientData] of activeClients.entries()) {
+        if (clientData.isReady) {
+            if (clientData.timeout) clearTimeout(clientData.timeout);
+            clientData.timeout = setTimeout(() => {
+                console.log(`💤 Idle timeout reached for user ${uid}, destroying client.`);
+                clientData.client.destroy();
+                activeClients.delete(uid);
+            }, IDLE_TIMEOUT_MS);
+            return clientData.client;
+        }
+    }
+    return null;
+}
+
 function normalisePhone(phone) {
     let clean = String(phone || '').trim().replace(/\s+/g, '');
     if (clean.startsWith('whatsapp:')) clean = clean.replace('whatsapp:', '');
     if (clean.startsWith('+'))         clean = clean.substring(1);
-    if (clean.length === 10)           clean = `91${clean}`; // Default: India
-    return `${clean}@c.us`; // whatsapp-web.js requires @c.us suffix
+    if (clean.length === 10)           clean = `91${clean}`;
+    return `${clean}@c.us`;
 }
 
-// ── sendWhatsAppMessage ───────────────────────────────────────────────────────
-/**
- * Sends the invoice notification message + attaches the PDF as a document.
- * @param {Object} invoice     - Mongoose invoice document
- * @param {string} paymentLink - Clickable payment URL
- * @param {string} pdfPath     - Absolute path to the generated invoice PDF
- */
-async function sendWhatsAppMessage(invoice, paymentLink = '', pdfPath = null) {
-    if (!invoice?.phone) {
-        console.log('ℹ️  WhatsApp skipped: no phone number on invoice.');
-        return;
-    }
-    if (!isReady || !client) {
-        console.warn('⚠️  WhatsApp send skipped: client not ready. Scan QR in terminal first.');
+async function sendWhatsAppMessage(invoice, paymentLink = '', pdfPath = null, user = null) {
+    if (!invoice?.phone) return;
+    const userId = user ? String(user._id || user) : (invoice.userId ? String(invoice.userId) : null);
+
+    const client = await getReadyClient(userId);
+    if (!client) {
+        console.warn(`⚠️ WhatsApp send skipped: client not ready for user ${userId || 'any'}`);
         return;
     }
 
@@ -94,78 +248,54 @@ async function sendWhatsAppMessage(invoice, paymentLink = '', pdfPath = null) {
         `Thank you for your business! 🙏`;
 
     try {
-        // 1️⃣  Send the text message with payment link
         await client.sendMessage(jid, text);
-        console.log(`✅ WhatsApp text sent to ${invoice.phone}`);
-
+        console.log(`✅ WhatsApp text invoice sent to ${invoice.phone}`);
         if (pdfPath && fs.existsSync(pdfPath)) {
             const invoiceId = String(invoice._id).slice(-8).toUpperCase();
             const media = MessageMedia.fromFilePath(pdfPath);
-            await client.sendMessage(jid, media, {
-                caption: `📄 Your invoice PDF — Invoice #${invoiceId}`
-            });
-            console.log(`✅ WhatsApp PDF sent to ${invoice.phone}`);
+            await client.sendMessage(jid, media, { caption: `📄 Your invoice PDF — Invoice #${invoiceId}` });
+            console.log(`✅ WhatsApp PDF invoice sent to ${invoice.phone}`);
         }
     } catch (err) {
-        console.error('⚠️  WhatsApp send failed (non-fatal):', err.message);
+        console.error('⚠️  WhatsApp send failed:', err.message);
     }
 }
 
-// ── sendRawWhatsApp ───────────────────────────────────────────────────────────
-async function sendRawWhatsApp(phone, message) {
+async function sendRawWhatsApp(phone, message, user = null) {
     if (!phone) return;
-    if (!isReady || !client) {
-        console.warn('⚠️  WhatsApp send skipped: client not ready. Scan QR in terminal first.');
-        return;
-    }
+    const userId = user ? String(user._id || user) : null;
+    const client = await getReadyClient(userId);
+    if (!client) return;
     const jid = normalisePhone(phone);
-    try {
+    try { 
         await client.sendMessage(jid, message);
-        console.log(`✅ WhatsApp message sent to ${phone}`);
-    } catch (err) {
-        console.error('⚠️  WhatsApp send failed (non-fatal):', err.message);
+        console.log(`✅ WhatsApp raw message sent to ${phone}`);
+    } catch (e) {
+        console.error('⚠️  WhatsApp raw send failed:', e.message);
     }
 }
 
-// ── sendWhatsAppVoiceNote ─────────────────────────────────────────────────────
-// Sends a text fallback since TTS on Windows requires additional setup.
-async function sendWhatsAppVoiceNote(phone, messageText) {
-    if (!phone) return;
-    // Send as regular text message (works without any TTS dependency)
-    await sendRawWhatsApp(phone, `🔔 ${messageText}`);
+async function sendWhatsAppVoiceNote(phone, messageText, user = null) {
+    await sendRawWhatsApp(phone, `🔔 ${messageText}`, user);
 }
 
-// ── sendWhatsAppPdf ────────────────────────────────────────────────────────────
-/**
- * Sends a PDF file as a WhatsApp document.
- * Used for payment receipts (PAID invoice PDF).
- *
- * @param {string} phone     - Recipient phone number
- * @param {string} pdfPath   - Absolute path to the PDF file
- * @param {string} fileName  - Display filename shown in WhatsApp
- * @param {string} caption   - Optional caption shown under the document
- */
-async function sendWhatsAppPdf(phone, pdfPath, fileName, caption = '') {
+async function sendWhatsAppPdf(phone, pdfPath, fileName, caption = '', user = null) {
     if (!phone || !pdfPath) return;
-    if (!isReady || !client) {
-        console.warn('⚠️  WhatsApp PDF skipped: client not ready. Scan QR in terminal first.');
-        return;
-    }
-    if (!fs.existsSync(pdfPath)) {
-        console.warn('⚠️  WhatsApp PDF skipped: file not found:', pdfPath);
-        return;
-    }
+    if (!fs.existsSync(pdfPath)) return;
+    
+    const userId = user ? String(user._id || user) : null;
+    const client = await getReadyClient(userId);
+    if (!client) return;
 
     const jid = normalisePhone(phone);
     try {
         const media = MessageMedia.fromFilePath(pdfPath);
-        media.filename = fileName; // override default filename
-        
+        media.filename = fileName;
         await client.sendMessage(jid, media, { caption });
         console.log(`✅ WhatsApp PDF (${fileName}) sent to ${phone}`);
     } catch (err) {
-        console.error('⚠️  WhatsApp PDF send failed (non-fatal):', err.message);
+        console.error('⚠️  WhatsApp PDF send failed:', err.message);
     }
 }
 
-module.exports = { initWhatsApp, sendWhatsAppMessage, sendRawWhatsApp, sendWhatsAppVoiceNote, sendWhatsAppPdf };
+module.exports = { initWhatsApp, sendWhatsAppMessage, sendRawWhatsApp, sendWhatsAppVoiceNote, sendWhatsAppPdf, getReadyClient };

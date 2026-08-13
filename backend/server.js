@@ -7,7 +7,11 @@ const fs         = require('fs');
 const multer     = require('multer');
 const Razorpay   = require('razorpay');
 require('dotenv').config();
-
+const http       = require('http');
+const { Server } = require('socket.io');
+const session    = require('express-session');
+const passport   = require('passport');
+require('./config/passport');
 // ── Global crash protection ──────────────────────────────────────────────────
 // Prevents WhatsApp/Puppeteer unhandled rejections from killing the server.
 process.on('unhandledRejection', (reason) => {
@@ -19,6 +23,8 @@ process.on('uncaughtException', (err) => {
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 const Invoice                = require('./models/Invoice');
+const User                   = require('./models/User');
+const { requireAuth }        = require('./middleware/auth');
 const { generateInvoicePDF } = require('./utils/pdfGenerator');
 const { sendInvoiceEmail, sendPaymentReceiptNotification, sendPaymentFailedNotification } = require('./utils/emailSender');
 const { sendWhatsAppMessage, initWhatsApp, sendWhatsAppVoiceNote }= require('./utils/whatsapp');
@@ -28,8 +34,24 @@ const { predictRisk }        = require('./utils/riskPredictor');
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
+// ── Socket.io Setup ───────────────────────────────────────────────────────────
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: '*', // Adjust to specific frontend URL in production
+        methods: ['GET', 'POST']
+    }
+});
+
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors());
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'invoicesessionsecret',
+    resave: false,
+    saveUninitialized: false
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
 // IMPORTANT: Razorpay webhook needs the RAW body for HMAC verification.
 // We apply express.json() to everything EXCEPT the webhook route.
@@ -41,15 +63,43 @@ app.use((req, res, next) => {
     }
 });
 
+// ── Auth Routes ───────────────────────────────────────────────────────────────
+app.use('/api/auth', require('./routes/auth'));
+
 // ── Database ─────────────────────────────────────────────────────────────────
-mongoose.connect(process.env.MONGO_URI, {
-    family: 4 // Fixes Node.js DNS resolution bug
-})
-    .then(() => {
-        console.log('✅ Database is connected successfully!');
-        initWhatsApp();
-    })
-    .catch((err) => console.log('❌ Database connection error: ', err));
+const MONGO_OPTIONS = {
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 30000,
+    // No 'family' override — let the OS/driver pick IPv4 or IPv6 automatically
+};
+
+async function connectWithRetry(maxRetries = 5, delayMs = 5000) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await mongoose.connect(process.env.MONGO_URI, MONGO_OPTIONS);
+            console.log('✅ Database is connected successfully!');
+            initWhatsApp(io);
+            return;
+        } catch (err) {
+            console.log(`❌ DB connection attempt ${attempt}/${maxRetries} failed: ${err.message}`);
+            if (attempt < maxRetries) {
+                console.log(`   ⏳ Retrying in ${delayMs / 1000}s...`);
+                await new Promise(r => setTimeout(r, delayMs));
+            } else {
+                console.log('❌ All connection attempts failed. Server running without DB — restart to retry.');
+            }
+        }
+    }
+}
+connectWithRetry();
+
+mongoose.connection.on('disconnected', () => {
+    console.log('⚠️  MongoDB disconnected. Mongoose will auto-reconnect.');
+});
+mongoose.connection.on('reconnected', () => {
+    console.log('✅ MongoDB reconnected!');
+});
 
 // ── Razorpay Client ───────────────────────────────────────────────────────────
 const razorpay = new Razorpay({
@@ -72,9 +122,9 @@ const upload = multer({
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── POST /api/invoices — Create a new invoice ────────────────────────────────
-app.post('/api/invoices', async (req, res) => {
+app.post('/api/invoices', requireAuth, async (req, res) => {
     try {
-        const body = { ...req.body };
+        const body = { ...req.body, userId: req.user };
 
         // ── Multi-item support: compute total & itemName from items array ───
         if (body.items && Array.isArray(body.items) && body.items.length > 0) {
@@ -84,6 +134,7 @@ app.post('/api/invoices', async (req, res) => {
 
         const newInvoice   = new Invoice(body);
         const savedInvoice = await newInvoice.save();
+        const user         = await User.findById(req.user);
 
         // ── Generate unique client-facing payment link ──────────────────
         const FRONTEND_URL  = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -99,21 +150,22 @@ app.post('/api/invoices', async (req, res) => {
 
         // Send email with payment link CTA (non-fatal)
         try {
-            await sendInvoiceEmail(savedInvoice.email, pdfPath, savedInvoice, paymentLink);
+            await sendInvoiceEmail(savedInvoice.email, pdfPath, savedInvoice, paymentLink, user);
         } catch (e) {
             console.error('⚠️  Email failed (non-fatal):', e.message);
             console.error('    → Check GMAIL_USER and GMAIL_APP_PASSWORD in .env');
         }
 
         // Send WhatsApp with payment link and PDF attachment (fire-and-forget, non-fatal)
-        sendWhatsAppMessage(savedInvoice, paymentLink, pdfPath).catch(e =>
+        sendWhatsAppMessage(savedInvoice, paymentLink, pdfPath, user).catch(e =>
             console.error('⚠️  WhatsApp fire failed:', e.message)
         );
 
         // Send Voice Note alert (fire-and-forget)
         sendWhatsAppVoiceNote(
             savedInvoice.phone,
-            `Hello ${savedInvoice.clientName}. An invoice for ${savedInvoice.itemName} has been generated for ${savedInvoice.amount} rupees. Please check your messages for the payment link.`
+            `Hello ${savedInvoice.clientName}. An invoice for ${savedInvoice.itemName} has been generated for ${savedInvoice.amount} rupees. Please check your messages for the payment link.`,
+            user
         ).catch(e => console.error('⚠️  WhatsApp Voice Note failed:', e.message));
 
         res.status(201).json({ ...savedInvoice.toObject(), paymentLink });
@@ -124,9 +176,9 @@ app.post('/api/invoices', async (req, res) => {
 });
 
 // ── GET /api/invoices — List all invoices ────────────────────────────────────
-app.get('/api/invoices', async (req, res) => {
+app.get('/api/invoices', requireAuth, async (req, res) => {
     try {
-        const invoices = await Invoice.find().sort({ createdAt: -1 });
+        const invoices = await Invoice.find({ userId: req.user }).sort({ createdAt: -1 });
         res.status(200).json(invoices);
     } catch (error) {
         res.status(500).json({ message: 'Failed to fetch invoices', error });
@@ -144,11 +196,47 @@ app.get('/api/invoices/:id', async (req, res) => {
     }
 });
 
-// ── DELETE /api/invoices/:id — Delete an invoice ─────────────────────────────
-app.delete('/api/invoices/:id', async (req, res) => {
+// ── POST /api/invoices/:id/resend — Resend WhatsApp & Email notifications ───
+app.post('/api/invoices/:id/resend', requireAuth, async (req, res) => {
     try {
-        const invoice = await Invoice.findByIdAndDelete(req.params.id);
+        const invoice = await Invoice.findOne({ _id: req.params.id, userId: req.user });
         if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
+
+        const user = await User.findById(req.user);
+        const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const paymentLink  = `${FRONTEND_URL}/pay/${invoice._id}`;
+
+        let pdfPath = path.join(__dirname, 'generated_pdfs', `invoice_${invoice._id}.pdf`);
+        if (!fs.existsSync(pdfPath)) {
+            try {
+                pdfPath = await generateInvoicePDF(invoice, paymentLink);
+            } catch (e) {}
+        }
+
+        // Send email (non-fatal)
+        try {
+            await sendInvoiceEmail(invoice.email, pdfPath, invoice, paymentLink, user);
+        } catch (e) {
+            console.error('⚠️  Resend Email failed (non-fatal):', e.message);
+        }
+
+        // Send WhatsApp
+        sendWhatsAppMessage(invoice, paymentLink, pdfPath, user).catch(e =>
+            console.error('⚠️  Resend WhatsApp failed:', e.message)
+        );
+
+        res.status(200).json({ success: true, message: 'Invoice resent successfully!' });
+    } catch (error) {
+        console.error('Resend failed:', error);
+        res.status(500).json({ message: 'Failed to resend invoice', error: error.message });
+    }
+});
+
+// ── DELETE /api/invoices/:id — Delete invoice ────────────────────────────────
+app.delete('/api/invoices/:id', requireAuth, async (req, res) => {
+    try {
+        const deletedInvoice = await Invoice.findOneAndDelete({ _id: req.params.id, userId: req.user });
+        if (!deletedInvoice) return res.status(404).json({ message: 'Invoice not found' });
 
         // Clean up generated PDF file
         const pdfFile = path.join(__dirname, 'generated_pdfs', `invoice_${req.params.id}.pdf`);
@@ -290,7 +378,7 @@ app.post('/api/payment/webhook', async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── POST /api/ocr/scan — Upload image, extract invoice fields ────────────────
-app.post('/api/ocr/scan', upload.single('image'), async (req, res) => {
+app.post('/api/ocr/scan', requireAuth, upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ message: 'No image uploaded' });
 
     try {
@@ -323,9 +411,9 @@ app.post('/api/risk/predict', async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── GET /api/analytics/summary — Revenue stats + next-month prediction ───────
-app.get('/api/analytics/summary', async (req, res) => {
+app.get('/api/analytics/summary', requireAuth, async (req, res) => {
     try {
-        const invoices = await Invoice.find().sort({ createdAt: 1 });
+        const invoices = await Invoice.find({ userId: req.user }).sort({ createdAt: 1 });
 
         const totalRevenue  = invoices.reduce((sum, inv) => sum + inv.amount, 0);
         const paidRevenue   = invoices.filter(i => i.status === 'PAID').reduce((sum, inv) => sum + inv.amount, 0);
@@ -440,6 +528,6 @@ app.post('/api/payment/verify', async (req, res) => {
 app.get('/', (req, res) => res.send('Invoice Generator Backend API is running!'));
 
 // ── Start Server ──────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`🚀 Server is running on http://localhost:${PORT}`);
 });
