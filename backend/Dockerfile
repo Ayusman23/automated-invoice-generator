@@ -17,7 +17,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 WORKDIR /usr/src/app
 
 # Install dependencies first for better caching
-COPY package*.json ./
+COPY package*.json patch-wwebjs.js* ./
 RUN npm install
 
 # Copy application files
