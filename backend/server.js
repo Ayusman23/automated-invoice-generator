@@ -234,35 +234,34 @@ app.post('/api/invoices', requireAuth, invoiceCreateLimiter, validateInvoiceInpu
         const FRONTEND_URL  = process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app';
         const paymentLink   = `${FRONTEND_URL}/pay/${savedInvoice._id}`;
 
-        // ── Instant Response to Frontend (Under 50ms) ───────────────────
+        // ── 1. Generate PDF ─────────────────────────────────────────────
+        let pdfPath = null;
+        try {
+            pdfPath = await generateInvoicePDF(savedInvoice, paymentLink);
+        } catch (pdfErr) {
+            console.error('⚠️  PDF generation failed (non-fatal):', pdfErr.message);
+        }
+
+        // ── 2. Send Email (Synchronously dispatched to guarantee delivery) 
+        try {
+            await sendInvoiceEmail(savedInvoice.email, pdfPath, savedInvoice, paymentLink, user);
+        } catch (e) {
+            console.error('⚠️  Email dispatch error:', e.message);
+        }
+
+        // ── 3. Send WhatsApp notifications ───────────────────────────────
+        sendWhatsAppMessage(savedInvoice, paymentLink, pdfPath, user).catch(e =>
+            console.error('⚠️  WhatsApp dispatch error:', e.message)
+        );
+
+        sendWhatsAppVoiceNote(
+            savedInvoice.phone,
+            `Hello ${savedInvoice.clientName}. An invoice for ${savedInvoice.itemName} has been generated for ${savedInvoice.amount} rupees. Please check your messages for the payment link.`,
+            user
+        ).catch(e => console.error('⚠️  WhatsApp Voice Note error:', e.message));
+
+        // ── 4. Respond to client ─────────────────────────────────────────
         res.status(201).json({ ...savedInvoice.toObject(), paymentLink });
-
-        // ── Asynchronous Background Dispatch Pipeline (Non-blocking) ───
-        (async () => {
-            let pdfPath = null;
-            try {
-                pdfPath = await generateInvoicePDF(savedInvoice, paymentLink);
-            } catch (pdfErr) {
-                console.error('⚠️  PDF generation failed (non-fatal):', pdfErr.message);
-            }
-
-            // Send email with payment link CTA
-            sendInvoiceEmail(savedInvoice.email, pdfPath, savedInvoice, paymentLink, user).catch(e =>
-                console.error('⚠️  Email dispatch error:', e.message)
-            );
-
-            // Send WhatsApp with payment link and PDF attachment
-            sendWhatsAppMessage(savedInvoice, paymentLink, pdfPath, user).catch(e =>
-                console.error('⚠️  WhatsApp dispatch error:', e.message)
-            );
-
-            // Send Voice Note alert
-            sendWhatsAppVoiceNote(
-                savedInvoice.phone,
-                `Hello ${savedInvoice.clientName}. An invoice for ${savedInvoice.itemName} has been generated for ${savedInvoice.amount} rupees. Please check your messages for the payment link.`,
-                user
-            ).catch(e => console.error('⚠️  WhatsApp Voice Note error:', e.message));
-        })().catch(err => console.error('⚠️ Background dispatch pipeline error:', err));
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Failed to create invoice', error });
