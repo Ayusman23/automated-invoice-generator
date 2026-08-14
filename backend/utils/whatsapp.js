@@ -92,7 +92,10 @@ async function startClient(userId, socket) {
     }
 
     const client = new Client({
-        authStrategy: new NoAuth(),
+        authStrategy: new LocalAuth({
+            clientId: `user-${userId}`,
+            dataPath: path.join(__dirname, '..', 'wa_auth')
+        }),
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
         puppeteer: puppeteerConfig,
         webVersionCache: {
@@ -224,6 +227,7 @@ function normalisePhone(phone) {
     let clean = String(phone || '').trim();
     if (clean.startsWith('whatsapp:')) clean = clean.replace('whatsapp:', '');
     clean = clean.replace(/[^0-9]/g, '');
+    clean = clean.replace(/^0+/, ''); // Remove leading zeros if present
     if (clean.length === 10) clean = `91${clean}`;
     return `${clean}@c.us`;
 }

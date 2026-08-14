@@ -23,8 +23,12 @@ function createTransporter(user = null) {
   }
 
   // Fallback to global config (useful if admin creates without logging in, etc)
-  const fallbackUser = (process.env.GMAIL_USER          || '').trim();
-  const fallbackPass = (process.env.GMAIL_APP_PASSWORD  || '').replace(/\s+/g, '');
+  const fallbackUser = (process.env.GMAIL_USER         || '').trim().replace(/^["']|["']$/g, '');
+  const fallbackPass = (process.env.GMAIL_APP_PASSWORD || '').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+
+  if (!fallbackUser || !fallbackPass) {
+    console.warn('⚠️ GMAIL_USER or GMAIL_APP_PASSWORD is not set in .env. Generate a 16-char App Password at: https://myaccount.google.com/apppasswords');
+  }
 
   return nodemailer.createTransport({
     host:   'smtp.gmail.com',
