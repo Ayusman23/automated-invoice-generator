@@ -72,9 +72,6 @@ app.use(cors({
     credentials: true,
 }));
 
-// Explicit preflight handler
-app.options('*', cors());
-
 // ── Fast Health Checks (Render & Load Balancers) ─────────────────────────────
 app.get(['/', '/health', '/healthz'], (req, res) => {
     res.status(200).json({ status: 'ok', uptime: process.uptime(), service: 'Invoice Generator Backend API' });
