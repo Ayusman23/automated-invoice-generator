@@ -73,16 +73,12 @@ async function startClient(userId, socket) {
     socket.emit('whatsapp-status', { status: 'INITIALIZING' });
     if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'INITIALIZING' });
 
-    // Clean up stale session lock files left behind by prior crashes
+    // Clean up stale or incomplete session directory before generating a new QR code
     const sessionDir = path.join(__dirname, '..', 'wa_auth', `session-user-${userId}`);
     try {
         if (fs.existsSync(sessionDir)) {
-            ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort'].forEach(file => {
-                const filePath = path.join(sessionDir, file);
-                if (fs.existsSync(filePath)) {
-                    try { fs.unlinkSync(filePath); } catch (e) {}
-                }
-            });
+            // Remove incomplete session to prevent cryptographic key mismatch on phone QR scan
+            fs.rmSync(sessionDir, { recursive: true, force: true });
         }
     } catch (e) {}
 
@@ -95,18 +91,14 @@ async function startClient(userId, socket) {
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
-            '--no-zygote',
-            '--single-process',
             '--disable-gpu',
             '--disable-extensions',
             '--disable-software-rasterizer',
             '--disable-blink-features=AutomationControlled',
-            '--js-flags=--max-old-space-size=256',
+            '--js-flags=--max-old-space-size=300',
             '--disable-default-apps',
             '--disable-background-networking',
             '--disable-sync',
-            '--renderer-process-limit=1',
-            '--disable-site-isolation-trials',
             '--mute-audio'
         ],
     };
@@ -119,7 +111,6 @@ async function startClient(userId, socket) {
             clientId: `user-${userId}`,
             dataPath: path.join(__dirname, '..', 'wa_auth')
         }),
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
         authTimeoutMs: 120000,
         qrMaxRetries: 20,
         takeoverOnConflict: true,
