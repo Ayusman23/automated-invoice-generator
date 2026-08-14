@@ -45,6 +45,15 @@ const io = new Server(server, {
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors());
+
+// ── Fast Health Checks (Render & Load Balancers) ─────────────────────────────
+app.get(['/', '/health', '/healthz'], (req, res) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime(), service: 'Invoice Generator Backend API' });
+});
+app.head(['/', '/health', '/healthz'], (req, res) => {
+    res.status(200).end();
+});
+
 app.use(session({
     secret: process.env.SESSION_SECRET || 'invoicesessionsecret',
     resave: false,
@@ -530,15 +539,6 @@ app.post('/api/payment/verify', async (req, res) => {
         console.error('Payment verification failed:', error);
         res.status(500).json({ success: false, message: 'Server error during payment verification.', error: error.message });
     }
-});
-
-// ── Health Check (Render / Monitoring) ───────────────────────────────────────
-app.get('/', (req, res) => {
-    res.status(200).send('Invoice Generator Backend API is running!');
-});
-
-app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
 // ── Start Server ──────────────────────────────────────────────────────────────
