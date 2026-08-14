@@ -12,10 +12,11 @@ export default function Settings() {
 
     useEffect(() => {
         const newSocket = io(API_URL, {
-            transports: ['websocket', 'polling'],
-            reconnectionAttempts: 5,
+            transports: ['polling', 'websocket'],
+            withCredentials: true,
+            reconnectionAttempts: 10,
             reconnectionDelay: 2000,
-            timeout: 10000,
+            timeout: 20000,
         });
         setSocket(newSocket);
 

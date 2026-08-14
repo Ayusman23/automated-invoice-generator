@@ -39,11 +39,17 @@ const PORT = process.env.PORT || 10000;
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: '*', // Allow all origins for socket connections
+        origin: (origin, callback) => {
+            // Allow all matching origins or requests with no origin
+            callback(null, true);
+        },
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         credentials: true
-    }
+    },
+    transports: ['polling', 'websocket'],
+    allowEIO3: true
 });
+initWhatsApp(io);
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 const allowedOrigins = [
@@ -111,7 +117,6 @@ async function connectWithRetry(maxRetries = 5, delayMs = 5000) {
         try {
             await mongoose.connect(process.env.MONGO_URI, MONGO_OPTIONS);
             console.log('✅ Database is connected successfully!');
-            initWhatsApp(io);
             return;
         } catch (err) {
             console.log(`❌ DB connection attempt ${attempt}/${maxRetries} failed: ${err.message}`);

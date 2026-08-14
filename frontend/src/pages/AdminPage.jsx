@@ -51,10 +51,11 @@ export default function AdminPage() {
 
   useEffect(() => {
     const s = io(API_URL, {
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
+      transports: ['polling', 'websocket'],
+      withCredentials: true,
+      reconnectionAttempts: 10,
       reconnectionDelay: 2000,
-      timeout: 10000,
+      timeout: 20000,
     });
     setWaSocket(s);
     if (user?._id) {
