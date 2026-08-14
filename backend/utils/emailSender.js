@@ -35,7 +35,10 @@ function createTransporter() {
  * Optimized with plaintext alternate and clean headers to land directly in the Primary Inbox.
  */
 async function sendInvoiceEmail(toEmail, pdfPath, invoice = {}, paymentLink = '', user = null) {
-  if (!toEmail) return;
+  if (!toEmail) {
+    console.warn('⚠️  sendInvoiceEmail skipped: recipient toEmail is empty.');
+    return;
+  }
 
   const transporter    = createTransporter();
   const invoiceIdShort = invoice._id ? String(invoice._id).slice(-8).toUpperCase() : '';
@@ -44,6 +47,8 @@ async function sendInvoiceEmail(toEmail, pdfPath, invoice = {}, paymentLink = ''
   const fallbackUser = (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
   const senderName   = user?.name || "Invoice Generator Pro";
   const replyToEmail = user?.email || fallbackUser;
+
+  console.log(`📤 Dispatching invoice email to: "${toEmail}" from: "${fallbackUser}"...`);
 
   const plainText = 
 `Hi ${invoice.clientName || 'there'},
