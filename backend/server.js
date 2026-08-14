@@ -630,6 +630,18 @@ app.post('/api/payment/verify', async (req, res) => {
     }
 });
 
+// ── Proactive Memory Watchdog (Prevents Render 512MB OOM) ───────────────────
+setInterval(() => {
+    const mem = process.memoryUsage();
+    const rssMB = Math.round(mem.rss / 1024 / 1024);
+    const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+
+    if (rssMB > 300 && global.gc) {
+        console.warn(`⚠️ High memory detected (RSS: ${rssMB}MB, Heap: ${heapMB}MB). Triggering proactive Garbage Collection...`);
+        try { global.gc(); } catch (e) {}
+    }
+}, 30000);
+
 // ── Start Server ──────────────────────────────────────────────────────────────
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server is running on http://0.0.0.0:${PORT}`);

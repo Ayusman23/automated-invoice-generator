@@ -13,7 +13,8 @@ RUN apt-get update \
 # Skip downloading Chrome via Puppeteer and use the installed one
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
-    NODE_OPTIONS="--max-old-space-size=256"
+    NODE_ENV=production \
+    NODE_OPTIONS="--max-old-space-size=200 --expose-gc"
 
 WORKDIR /usr/src/app
 

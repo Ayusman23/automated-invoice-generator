@@ -66,6 +66,7 @@ async function startClient(userId, socket) {
             if (existing.client) await existing.client.destroy();
         } catch (e) {}
         activeClients.delete(userId);
+        if (global.gc) { try { global.gc(); } catch (e) {} }
         await new Promise(r => setTimeout(r, 1000));
     }
 
@@ -131,6 +132,7 @@ async function startClient(userId, socket) {
             console.log(`💤 Idle timeout reached for user ${userId}, destroying client to save RAM.`);
             try { client.destroy(); } catch (e) {}
             activeClients.delete(userId);
+            if (global.gc) { try { global.gc(); } catch (e) {} }
         }, IDLE_TIMEOUT_MS);
     };
 
