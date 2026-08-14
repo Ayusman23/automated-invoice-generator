@@ -35,6 +35,17 @@ export default function Login() {
         window.location.href = `${API_URL}/api/auth/google`;
     };
 
+    const handleDemoLogin = async () => {
+        setError(null);
+        try {
+            const res = await api.post('/api/auth/demo');
+            login(res.data);
+            navigate('/admin');
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to start demo session.');
+        }
+    };
+
     return (
         <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: '#FAF9F6', color: '#10151F', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
             <style>{`
@@ -57,30 +68,63 @@ export default function Login() {
                 .auth-link:hover { color: #0F2643; text-decoration: underline; }
             `}</style>
 
-            {/* Minimal Navbar matching Landing Page */}
-            <nav style={{ padding: '24px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-                    <div style={{ width: '32px', height: '32px', background: '#16345C', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-                        <IconReceipt size={18} />
+            <header style={{ height: '72px', borderBottom: '1px solid #E4E1DA', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 32px', background: '#fff' }}>
+                <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', color: '#16345C' }}>
+                    <div style={{ background: '#16345C', color: '#fff', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <IconReceipt size={20} />
                     </div>
-                    <span className="serif" style={{ fontWeight: 600, fontSize: '19px', color: '#10151F' }}>InvoicePro</span>
+                    <span className="serif" style={{ fontSize: '20px', fontWeight: 600, letterSpacing: '-0.02em' }}>
+                        InvoicePro
+                    </span>
                 </Link>
                 <div style={{ fontSize: '14px', color: '#6B7280' }}>
-                    New here? <Link to="/signup" className="auth-link">Create an account</Link>
+                    Don't have an account?{' '}
+                    <Link to="/signup" className="auth-link">
+                        Sign up
+                    </Link>
                 </div>
-            </nav>
+            </header>
 
-            {/* Login Form Container */}
-            <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
+            <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
                 <div style={{ width: '100%', maxWidth: '440px', background: '#fff', border: '1px solid #E4E1DA', borderRadius: '16px', padding: '40px', boxShadow: '0 10px 30px rgba(16,21,31,0.04)' }}>
 
-                    <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '28px' }}>
                         <h1 className="serif" style={{ fontSize: '28px', fontWeight: 600, color: '#10151F', marginBottom: '8px' }}>
                             Welcome Back
                         </h1>
                         <p style={{ fontSize: '15px', color: '#6B7280' }}>
                             Sign in to manage your invoices and clients
                         </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={handleDemoLogin}
+                        style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            gap: '8px',
+                            width: '100%',
+                            padding: '13px',
+                            borderRadius: '8px',
+                            border: '1px solid #16a34a',
+                            background: '#f0fdf4',
+                            color: '#15803d',
+                            fontSize: '14.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            marginBottom: '20px',
+                            fontFamily: "'Inter', sans-serif"
+                        }}
+                    >
+                        ⚡ 1-Click Instant Demo Login
+                    </button>
+
+                    <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0 24px', color: '#8B93A1', fontSize: '12px' }}>
+                        <div style={{ flex: 1, height: '1px', background: '#E4E1DA' }}></div>
+                        <span style={{ padding: '0 10px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Or with email</span>
+                        <div style={{ flex: 1, height: '1px', background: '#E4E1DA' }}></div>
                     </div>
 
                     {error && (

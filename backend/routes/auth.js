@@ -65,6 +65,34 @@ router.post('/login', validateAuthInput, async (req, res) => {
     }
 });
 
+// ── 1-Click Instant Demo Login (100% Free & Fail-Safe for any user) ──────────
+router.post('/demo', async (req, res) => {
+    try {
+        const demoEmail = 'admin.demo@invoicepro.in';
+        let demoUser = await User.findOne({ email: demoEmail });
+        if (!demoUser) {
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash('DemoPassword123!', salt);
+            demoUser = await User.create({
+                name: 'Ayusman (Demo Admin)',
+                email: demoEmail,
+                password: hashedPassword,
+                whatsappConnected: false
+            });
+        }
+        const token = createToken(demoUser._id);
+        res.status(200).json({
+            email: demoUser.email,
+            name: demoUser.name,
+            token,
+            _id: demoUser._id,
+            whatsappConnected: demoUser.whatsappConnected
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ── Google OAuth (Clean Standard OAuth for instant login without 403 access_denied) ──
 router.get('/google', passport.authenticate('google', { 
     scope: ['profile', 'email']
