@@ -27,7 +27,28 @@ try {
         let client = fs.readFileSync(clientPath, 'utf8');
         let modified = false;
 
-        // Fix goto waitUntil to domcontentloaded
+        // Fix goto waitUntil to domcontentloaded & block heavy media/fonts for low memory footprint
+        if (client.includes("await page.goto(WhatsWebURL")) {
+            if (!client.includes('setRequestInterception')) {
+                client = client.replace(
+                    "await page.goto(WhatsWebURL",
+                    `try {
+            await page.setRequestInterception(true);
+            page.on('request', (req) => {
+                const rt = req.resourceType();
+                if (['media', 'font'].includes(rt)) {
+                    req.abort();
+                } else {
+                    req.continue();
+                }
+            });
+        } catch(e) {}
+        await page.goto(WhatsWebURL`
+                );
+                modified = true;
+            }
+        }
+
         if (client.includes("waitUntil: 'load'")) {
             client = client.replace("waitUntil: 'load'", "waitUntil: 'domcontentloaded'");
             modified = true;
