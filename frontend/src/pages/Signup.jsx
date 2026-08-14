@@ -93,12 +93,15 @@ export default function Signup() {
 
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <div>
-                            <label style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#4B5361', marginBottom: '8px' }}>
+                            <label htmlFor="signup-name" style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#4B5361', marginBottom: '8px' }}>
                                 Full Name
                             </label>
                             <input
+                                id="signup-name"
+                                name="name"
                                 type="text"
                                 required
+                                autoComplete="name"
                                 className="input-field"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
@@ -107,12 +110,15 @@ export default function Signup() {
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#4B5361', marginBottom: '8px' }}>
+                            <label htmlFor="signup-email" style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#4B5361', marginBottom: '8px' }}>
                                 Email Address
                             </label>
                             <input
+                                id="signup-email"
+                                name="email"
                                 type="email"
                                 required
+                                autoComplete="email"
                                 className="input-field"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
@@ -121,12 +127,15 @@ export default function Signup() {
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#4B5361', marginBottom: '8px' }}>
+                            <label htmlFor="signup-password" style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#4B5361', marginBottom: '8px' }}>
                                 Password
                             </label>
                             <input
+                                id="signup-password"
+                                name="password"
                                 type="password"
                                 required
+                                autoComplete="new-password"
                                 className="input-field"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}

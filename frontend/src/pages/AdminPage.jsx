@@ -624,16 +624,16 @@ export default function AdminPage() {
 
                 {/* OCR & Voice Actions */}
                 <div style={{ display: 'flex', gap: '6px' }}>
-                  <button className="btn-action-icon" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading} title="Scan handwritten invoice (AI OCR)">
+                  <button className="btn-action-icon" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading} title="Scan handwritten invoice (AI OCR)" aria-label="Scan handwritten invoice with AI OCR">
                     {ocrLoading ? <span style={{ animation: 'spin 1s linear infinite' }}>⏳</span> : <IconCamera size={16} />}
                   </button>
-                  <input ref={ocrInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleOcrUpload} />
+                  <input id="ocr-file-upload" name="ocrFile" ref={ocrInputRef} type="file" accept="image/*" capture="environment" aria-label="Upload handwritten invoice image" style={{ display: 'none' }} onChange={handleOcrUpload} />
 
-                  <button className="btn-action-icon" onClick={() => setShowOcrGuide(v => !v)} title="Handwriting OCR format guide">
+                  <button className="btn-action-icon" onClick={() => setShowOcrGuide(v => !v)} title="Handwriting OCR format guide" aria-label="Handwriting OCR format guide">
                     <IconHelp size={16} />
                   </button>
 
-                  <button className="btn-action-icon" onClick={toggleVoice} title="Voice invoice dictation" style={{ color: listening ? '#B91C1C' : '#4B5361', borderColor: listening ? '#FECACA' : '#E4E1DA', background: listening ? '#FEE2E2' : '#FFFFFF' }}>
+                  <button className="btn-action-icon" onClick={toggleVoice} title="Voice invoice dictation" aria-label="Voice invoice dictation" style={{ color: listening ? '#B91C1C' : '#4B5361', borderColor: listening ? '#FECACA' : '#E4E1DA', background: listening ? '#FEE2E2' : '#FFFFFF' }}>
                     <IconMic size={16} />
                   </button>
                 </div>
@@ -680,21 +680,21 @@ Total:  5000`}
               <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#10151F', marginBottom: '6px' }}>Client Name</label>
-                  <input className="input-base" type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="e.g. Ananya Rao" required />
+                  <label htmlFor="client-name" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#10151F', marginBottom: '6px' }}>Client Name</label>
+                  <input id="client-name" name="clientName" autoComplete="name" className="input-base" type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="e.g. Ananya Rao" required />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#10151F', marginBottom: '6px' }}>Email Address</label>
-                  <input className="input-base" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="client@company.com" required />
+                  <label htmlFor="client-email" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#10151F', marginBottom: '6px' }}>Email Address</label>
+                  <input id="client-email" name="clientEmail" autoComplete="email" className="input-base" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="client@company.com" required />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#10151F', marginBottom: '6px' }}>
+                  <label htmlFor="client-phone" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#10151F', marginBottom: '6px' }}>
                     WhatsApp Phone Number <span style={{ color: '#8B93A1', fontWeight: 400 }}>(Optional)</span>
                   </label>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <select className="input-base" value={countryCode} onChange={e => setCountryCode(e.target.value)} style={{ width: '100px', flexShrink: 0 }}>
+                    <select id="country-code" name="countryCode" aria-label="Country calling code" className="input-base" value={countryCode} onChange={e => setCountryCode(e.target.value)} style={{ width: '100px', flexShrink: 0 }}>
                       <option value="+91">+91 (IN)</option>
                       <option value="+1">+1 (US)</option>
                       <option value="+44">+44 (UK)</option>
@@ -702,14 +702,14 @@ Total:  5000`}
                       <option value="+65">+65 (SG)</option>
                       <option value="+61">+61 (AU)</option>
                     </select>
-                    <input className="input-base" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="9876543210" />
+                    <input id="client-phone" name="clientPhone" autoComplete="tel-national" className="input-base" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="9876543210" />
                   </div>
                 </div>
 
                 {/* Line Items */}
                 <div style={{ marginTop: '6px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: 600, color: '#10151F' }}>Line Items</label>
+                    <label id="line-items-label" style={{ fontSize: '13px', fontWeight: 600, color: '#10151F' }}>Line Items</label>
                     <button type="button" className="btn-secondary" onClick={addItem} style={{ padding: '4px 10px', fontSize: '12px' }}>
                       <IconPlus size={13} /> Add item
                     </button>
@@ -718,13 +718,13 @@ Total:  5000`}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {items.map((item, idx) => (
                       <div key={idx} className="item-row">
-                        <input className="input-base" style={{ padding: '8px 10px', fontSize: '13px' }} type="text" value={item.name} onChange={e => updateItem(idx, 'name', e.target.value)} placeholder="Item description" required />
-                        <input className="input-base" style={{ padding: '8px 6px', fontSize: '13px', textAlign: 'center' }} type="number" min="1" value={item.qty} onChange={e => updateItem(idx, 'qty', e.target.value)} />
+                        <input id={`item-name-${idx}`} name={`itemName_${idx}`} aria-label={`Item ${idx + 1} description`} className="input-base" style={{ padding: '8px 10px', fontSize: '13px' }} type="text" value={item.name} onChange={e => updateItem(idx, 'name', e.target.value)} placeholder="Item description" required />
+                        <input id={`item-qty-${idx}`} name={`itemQty_${idx}`} aria-label={`Item ${idx + 1} quantity`} className="input-base" style={{ padding: '8px 6px', fontSize: '13px', textAlign: 'center' }} type="number" min="1" value={item.qty} onChange={e => updateItem(idx, 'qty', e.target.value)} />
                         <div style={{ position: 'relative' }}>
                           <span className="mono" style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: '#8B93A1', fontSize: '12px' }}>₹</span>
-                          <input className="input-base" style={{ padding: '8px 8px 8px 18px', fontSize: '13px' }} type="number" min="0" value={item.price} onChange={e => updateItem(idx, 'price', e.target.value)} placeholder="0" required />
+                          <input id={`item-price-${idx}`} name={`itemPrice_${idx}`} aria-label={`Item ${idx + 1} price`} className="input-base" style={{ padding: '8px 8px 8px 18px', fontSize: '13px' }} type="number" min="0" value={item.price} onChange={e => updateItem(idx, 'price', e.target.value)} placeholder="0" required />
                         </div>
-                        <button type="button" onClick={() => removeItem(idx)} disabled={items.length === 1} style={{ background: 'none', border: 'none', color: items.length === 1 ? '#D1D5DB' : '#B91C1C', cursor: items.length === 1 ? 'not-allowed' : 'pointer', padding: '4px' }} title="Remove item">
+                        <button type="button" onClick={() => removeItem(idx)} disabled={items.length === 1} style={{ background: 'none', border: 'none', color: items.length === 1 ? '#D1D5DB' : '#B91C1C', cursor: items.length === 1 ? 'not-allowed' : 'pointer', padding: '4px' }} title="Remove item" aria-label={`Remove item ${idx + 1}`}>
                           <IconTrash size={15} />
                         </button>
                       </div>
@@ -797,6 +797,9 @@ Total:  5000`}
                       <IconSearch size={15} />
                     </span>
                     <input 
+                      id="invoice-search"
+                      name="searchQuery"
+                      aria-label="Search invoices by client or item"
                       className="input-base" 
                       style={{ padding: '8px 12px 8px 34px', fontSize: '13px', width: '100%' }} 
                       type="text" 
@@ -807,6 +810,9 @@ Total:  5000`}
                   </div>
 
                   <select 
+                    id="status-filter"
+                    name="statusFilter"
+                    aria-label="Filter invoices by payment status"
                     className="input-base" 
                     value={statusFilter} 
                     onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}

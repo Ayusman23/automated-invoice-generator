@@ -92,12 +92,15 @@ export default function Login() {
 
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <div>
-                            <label style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#4B5361', marginBottom: '8px' }}>
+                            <label htmlFor="login-email" style={{ display: 'block', fontSize: '13.5px', fontWeight: 600, color: '#4B5361', marginBottom: '8px' }}>
                                 Email Address
                             </label>
                             <input
+                                id="login-email"
+                                name="email"
                                 type="email"
                                 required
+                                autoComplete="email"
                                 className="input-field"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
@@ -107,7 +110,7 @@ export default function Login() {
 
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                                <label style={{ fontSize: '13.5px', fontWeight: 600, color: '#4B5361' }}>
+                                <label htmlFor="login-password" style={{ fontSize: '13.5px', fontWeight: 600, color: '#4B5361' }}>
                                     Password
                                 </label>
                                 <Link to="/forgot-password" style={{ fontSize: '13px', color: '#6B7280', textDecoration: 'none' }}>
@@ -115,8 +118,11 @@ export default function Login() {
                                 </Link>
                             </div>
                             <input
+                                id="login-password"
+                                name="password"
                                 type="password"
                                 required
+                                autoComplete="current-password"
                                 className="input-field"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
