@@ -20,7 +20,13 @@ async function extractInvoiceData(imagePath) {
 
     if (apiKey && apiKey !== 'your_free_api_key_here') {
         console.log('🤖 Using Gemini Vision OCR (high accuracy)…');
-        return await geminiOcr(imagePath, apiKey);
+        try {
+            return await geminiOcr(imagePath, apiKey);
+        } catch (geminiErr) {
+            console.error('⚠️  Gemini OCR failed:', geminiErr.message);
+            console.log('    Falling back to Tesseract (basic OCR)...');
+            return await tesseractOcr(imagePath);
+        }
     } else {
         console.log('⚠️  No GEMINI_API_KEY set — falling back to Tesseract (low accuracy for handwriting).');
         console.log('    👉 Get a FREE key at: https://aistudio.google.com/app/apikey');
@@ -29,7 +35,7 @@ async function extractInvoiceData(imagePath) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  ENGINE 1 — GEMINI 2.5 FLASH VISION  (new @google/genai SDK)
+//  ENGINE 1 — GEMINI VISION  (@google/genai SDK)
 // ═════════════════════════════════════════════════════════════════════════════
 
 async function geminiOcr(imagePath, apiKey) {
@@ -70,33 +76,41 @@ Please map the handwritten details to this exact JSON structure:
 
 Ensure the output is ONLY valid JSON with no markdown wrapping (do not use \`\`\`json). If a field is missing or unreadable, return null for that specific value.`;
 
-    const result = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: [
-            {
-                parts: [
-                    { text: prompt },
-                    { inlineData: { data: imageBase64, mimeType } }
+    const candidateModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
+    let lastError = null;
+
+    for (const model of candidateModels) {
+        try {
+            const result = await ai.models.generateContent({
+                model,
+                contents: [
+                    {
+                        parts: [
+                            { text: prompt },
+                            { inlineData: { data: imageBase64, mimeType } }
+                        ]
+                    }
                 ]
-            }
-        ]
-    });
+            });
 
-    let responseText = result.text.trim();
-    console.log('\n📄 Gemini raw response:\n', responseText);
+            let responseText = result.text ? result.text.trim() : '';
+            console.log(`\n📄 Gemini (${model}) raw response:\n`, responseText);
 
-    // Strip markdown code fences if Gemini wrapped the JSON
-    responseText = responseText
-        .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
-        .replace(/\s*```$/, '');
+            // Strip markdown code fences if Gemini wrapped the JSON
+            responseText = responseText
+                .replace(/^```json\s*/i, '')
+                .replace(/^```\s*/i, '')
+                .replace(/\s*```$/, '')
+                .trim();
 
-    try {
-        return JSON.parse(responseText);
-    } catch (e) {
-        console.error('❌ Failed to parse Gemini JSON:', e.message);
-        throw new Error('Gemini returned invalid JSON. Try again.');
+            return JSON.parse(responseText);
+        } catch (err) {
+            console.warn(`⚠️  Gemini model ${model} failed:`, err.message);
+            lastError = err;
+        }
     }
+
+    throw lastError || new Error('All Gemini models failed to process image.');
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -112,7 +126,7 @@ async function tesseractOcr(imagePath) {
             .normalise()
             .sharpen({ sigma: 1.5, m1: 1.0, m2: 0.5 })
             .threshold(145)
-            .resize({ width: 2400, withoutEnlargement: false })
+            .resize({ width: 1200, withoutEnlargement: true }) // Capped to 1200px to avoid 512MB RAM exhaustion on Render
             .toFile(processedPath);
     } catch (err) {
         console.warn('⚠️  Sharp preprocessing failed, using raw image:', err.message);
@@ -131,7 +145,9 @@ async function tesseractOcr(imagePath) {
         rawText = text;
         console.log('\n📄 Raw Tesseract text:\n', rawText);
     } finally {
-        if (fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
+        if (fs.existsSync(processedPath)) {
+            try { fs.unlinkSync(processedPath); } catch (e) {}
+        }
     }
 
     return parseTextToInvoice(rawText);

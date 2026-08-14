@@ -39,13 +39,35 @@ const PORT = process.env.PORT || 10000;
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: '*', // Adjust to specific frontend URL in production
-        methods: ['GET', 'POST']
+        origin: '*', // Allow all origins for socket connections
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        credentials: true
     }
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors());
+const allowedOrigins = [
+    'https://automated-invoice-generator-tau.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. mobile apps, curl, postman) or matching origins
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('localhost')) {
+            return callback(null, true);
+        }
+        return callback(null, true); // Permissive to prevent CORS blockages across deployments
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature', 'X-Requested-With'],
+    credentials: true,
+}));
+
+// Explicit preflight handler
+app.options('*', cors());
 
 // ── Fast Health Checks (Render & Load Balancers) ─────────────────────────────
 app.get(['/', '/health', '/healthz'], (req, res) => {
@@ -405,6 +427,10 @@ app.post('/api/ocr/scan', requireAuth, upload.single('image'), async (req, res) 
     } catch (error) {
         console.error('OCR failed:', error);
         res.status(500).json({ message: 'OCR processing failed', error: error.message });
+    } finally {
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+            try { fs.unlinkSync(req.file.path); } catch (e) {}
+        }
     }
 });
 

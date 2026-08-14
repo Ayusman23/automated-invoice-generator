@@ -50,7 +50,12 @@ export default function AdminPage() {
   const [waExpanded, setWaExpanded] = useState(false);
 
   useEffect(() => {
-    const s = io(API_URL);
+    const s = io(API_URL, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 2000,
+      timeout: 10000,
+    });
     setWaSocket(s);
     if (user?._id) {
       s.emit('get-whatsapp-status', { userId: user._id });
