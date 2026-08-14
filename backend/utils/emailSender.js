@@ -8,18 +8,22 @@ const { sendRawWhatsApp, sendWhatsAppVoiceNote, sendWhatsAppPdf } = require('./w
 //  Shared Transporter
 // ─────────────────────────────────────────────────────────────────────────────
 function createTransporter() {
-  const fallbackUser = (process.env.GMAIL_USER         || '').trim().replace(/^["']|["']$/g, '');
-  const fallbackPass = (process.env.GMAIL_APP_PASSWORD || '').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  const secure = port === 465;
 
-  if (!fallbackUser || !fallbackPass) {
-    console.warn('⚠️ GMAIL_USER or GMAIL_APP_PASSWORD is not set in .env. Generate a 16-char App Password at: https://myaccount.google.com/apppasswords');
+  const user = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+  const pass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+
+  if (!user || !pass) {
+    console.warn('⚠️ SMTP credentials not set in .env. Configure GMAIL_USER & GMAIL_APP_PASSWORD or custom SMTP_USER & SMTP_PASS.');
   }
 
   return nodemailer.createTransport({
-    host:   'smtp.gmail.com',
-    port:   465,
-    secure: true,
-    auth:   { user: fallbackUser, pass: fallbackPass },
+    host,
+    port,
+    secure,
+    auth: { user, pass },
   });
 }
 
