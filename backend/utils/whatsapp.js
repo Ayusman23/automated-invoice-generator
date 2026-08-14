@@ -100,10 +100,13 @@ async function startClient(userId, socket) {
             '--disable-gpu',
             '--disable-extensions',
             '--disable-software-rasterizer',
+            '--disable-blink-features=AutomationControlled',
             '--js-flags=--max-old-space-size=256',
             '--disable-default-apps',
             '--disable-background-networking',
             '--disable-sync',
+            '--renderer-process-limit=1',
+            '--disable-site-isolation-trials',
             '--mute-audio'
         ],
     };

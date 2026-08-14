@@ -142,12 +142,19 @@ const razorpay = new Razorpay({
 });
 
 // ── Multer Setup (for OCR image uploads) ─────────────────────────────────────
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch (e) {}
+}
 const upload = multer({
-    dest: path.join(__dirname, 'uploads/'),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max
+    dest: uploadsDir,
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max for high-res camera shots
     fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp'];
-        cb(null, allowed.includes(file.mimetype));
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed'));
+        }
     }
 });
 
