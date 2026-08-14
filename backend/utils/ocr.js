@@ -41,71 +41,97 @@ async function extractInvoiceData(imagePath) {
 async function geminiOcr(imagePath, apiKey) {
     const ai = new GoogleGenAI({ apiKey });
 
-    const imageBuffer = fs.readFileSync(imagePath);
+    // Optimize image size to speed up upload and prevent payload errors (max 1600px)
+    let imageBuffer;
+    let mimeType = 'image/jpeg';
+    try {
+        imageBuffer = await sharp(imagePath)
+            .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+    } catch (e) {
+        imageBuffer = fs.readFileSync(imagePath);
+        mimeType = imagePath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    }
+
     const imageBase64 = imageBuffer.toString('base64');
-    const mimeType    = imagePath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
 
-    const prompt = `You are an expert OCR and data extraction system. Analyze the provided image of a handwritten invoice and extract all the relevant information into a strict JSON format.
+    const prompt = `You are an expert OCR and data extraction system specialized in handwritten and printed invoices and receipts.
+Carefully examine the image and extract all invoice details into the requested JSON schema.
+Read handwritten text carefully, including client name, email, phone number, line items (description, quantity, price), and total amount.
 
-The user has been instructed to write in block letters using the following format:
-Client: [Name]
-Email: [Email]
-Phone: [Country Code] [Number]
-Item: [Description] | Qty: [Number] | Price: [Number]
-Total: [Total Amount]
+Format guidelines:
+- If a phone number is found, extract country code (default +91 if Indian 10-digit number) and the digits.
+- Items should be an array of objects with description, quantity (number), and unit_price (number).
+- Total amount should be a number (numeric sum of items or stated total).
 
-Please map the handwritten details to this exact JSON structure:
-
+Return JSON matching this exact structure:
 {
-  "client_name": "Extract the Client Name",
-  "email_address": "Extract the Email Address",
+  "client_name": "Client or Customer Name (or null)",
+  "email_address": "Email address (or null)",
   "phone": {
-    "country_code": "Extract the country code (e.g., +91)",
-    "number": "Extract the remaining phone number"
+    "country_code": "+91",
+    "number": "10-digit number"
   },
   "items": [
     {
-      "description": "Extract the item description",
-      "quantity": "Extract the quantity as a number",
-      "unit_price": "Extract the unit price as a number"
+      "description": "Item description",
+      "quantity": 1,
+      "unit_price": 500
     }
   ],
   "currency": "₹",
-  "total_amount": "Extract the invoice total as a number"
-}
+  "total_amount": 500
+}`;
 
-Ensure the output is ONLY valid JSON with no markdown wrapping (do not use \`\`\`json). If a field is missing or unreadable, return null for that specific value.`;
-
-    const candidateModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
+    const candidateModels = [
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-pro',
+        'gemini-flash-latest',
+        'gemini-pro-latest'
+    ];
     let lastError = null;
 
     for (const model of candidateModels) {
         try {
+            console.log(`🤖 Attempting OCR with Gemini model: ${model}…`);
             const result = await ai.models.generateContent({
                 model,
                 contents: [
                     {
+                        role: 'user',
                         parts: [
                             { text: prompt },
                             { inlineData: { data: imageBase64, mimeType } }
                         ]
                     }
-                ]
+                ],
+                config: {
+                    responseMimeType: 'application/json'
+                }
             });
 
             let responseText = result.text ? result.text.trim() : '';
+            if (!responseText && result.candidates && result.candidates[0]?.content?.parts?.[0]?.text) {
+                responseText = result.candidates[0].content.parts[0].text.trim();
+            }
+
             console.log(`\n📄 Gemini (${model}) raw response:\n`, responseText);
 
-            // Strip markdown code fences if Gemini wrapped the JSON
-            responseText = responseText
-                .replace(/^```json\s*/i, '')
-                .replace(/^```\s*/i, '')
-                .replace(/\s*```$/, '')
-                .trim();
+            // Robust JSON extraction (handles markdown or surrounding commentary)
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                console.log('✅ Successfully extracted invoice data via Gemini OCR:', parsed.client_name, `(Total: ₹${parsed.total_amount})`);
+                return parsed;
+            }
 
-            return JSON.parse(responseText);
+            if (responseText) {
+                return JSON.parse(responseText);
+            }
         } catch (err) {
-            console.warn(`⚠️  Gemini model ${model} failed:`, err.message);
+            console.warn(`⚠️  Gemini model ${model} failed:`, err.message || err);
             lastError = err;
         }
     }

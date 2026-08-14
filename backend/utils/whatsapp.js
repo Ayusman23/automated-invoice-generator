@@ -108,11 +108,8 @@ async function startClient(userId, socket) {
         qrMaxRetries: 25,
         takeoverOnConflict: true,
         puppeteer: puppeteerConfig,
-        webVersion: '2.3000.1041450038-alpha',
         webVersionCache: {
-            type: 'remote',
-            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
-            strict: false
+            type: 'local'
         }
     });
 
