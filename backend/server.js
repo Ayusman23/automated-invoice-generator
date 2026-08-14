@@ -234,35 +234,35 @@ app.post('/api/invoices', requireAuth, invoiceCreateLimiter, validateInvoiceInpu
         const FRONTEND_URL  = process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app';
         const paymentLink   = `${FRONTEND_URL}/pay/${savedInvoice._id}`;
 
-        // Generate PDF (non-fatal — email is still sent even if PDF fails)
-        let pdfPath = null;
-        try {
-            pdfPath = await generateInvoicePDF(savedInvoice, paymentLink);
-        } catch (pdfErr) {
-            console.error('⚠️  PDF generation failed (non-fatal):', pdfErr.message);
-        }
-
-        // Send email with payment link CTA (non-fatal)
-        try {
-            await sendInvoiceEmail(savedInvoice.email, pdfPath, savedInvoice, paymentLink, user);
-        } catch (e) {
-            console.error('⚠️  Email failed (non-fatal):', e.message);
-            console.error('    → Check GMAIL_USER and GMAIL_APP_PASSWORD in .env');
-        }
-
-        // Send WhatsApp with payment link and PDF attachment (fire-and-forget, non-fatal)
-        sendWhatsAppMessage(savedInvoice, paymentLink, pdfPath, user).catch(e =>
-            console.error('⚠️  WhatsApp fire failed:', e.message)
-        );
-
-        // Send Voice Note alert (fire-and-forget)
-        sendWhatsAppVoiceNote(
-            savedInvoice.phone,
-            `Hello ${savedInvoice.clientName}. An invoice for ${savedInvoice.itemName} has been generated for ${savedInvoice.amount} rupees. Please check your messages for the payment link.`,
-            user
-        ).catch(e => console.error('⚠️  WhatsApp Voice Note failed:', e.message));
-
+        // ── Instant Response to Frontend (Under 50ms) ───────────────────
         res.status(201).json({ ...savedInvoice.toObject(), paymentLink });
+
+        // ── Asynchronous Background Dispatch Pipeline (Non-blocking) ───
+        (async () => {
+            let pdfPath = null;
+            try {
+                pdfPath = await generateInvoicePDF(savedInvoice, paymentLink);
+            } catch (pdfErr) {
+                console.error('⚠️  PDF generation failed (non-fatal):', pdfErr.message);
+            }
+
+            // Send email with payment link CTA
+            sendInvoiceEmail(savedInvoice.email, pdfPath, savedInvoice, paymentLink, user).catch(e =>
+                console.error('⚠️  Email dispatch error:', e.message)
+            );
+
+            // Send WhatsApp with payment link and PDF attachment
+            sendWhatsAppMessage(savedInvoice, paymentLink, pdfPath, user).catch(e =>
+                console.error('⚠️  WhatsApp dispatch error:', e.message)
+            );
+
+            // Send Voice Note alert
+            sendWhatsAppVoiceNote(
+                savedInvoice.phone,
+                `Hello ${savedInvoice.clientName}. An invoice for ${savedInvoice.itemName} has been generated for ${savedInvoice.amount} rupees. Please check your messages for the payment link.`,
+                user
+            ).catch(e => console.error('⚠️  WhatsApp Voice Note error:', e.message));
+        })().catch(err => console.error('⚠️ Background dispatch pipeline error:', err));
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Failed to create invoice', error });
@@ -308,26 +308,28 @@ app.post('/api/invoices/:id/resend', requireAuth, async (req, res) => {
         const FRONTEND_URL = process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app';
         const paymentLink  = `${FRONTEND_URL}/pay/${invoice._id}`;
 
-        let pdfPath = path.join(__dirname, 'generated_pdfs', `invoice_${invoice._id}.pdf`);
-        if (!fs.existsSync(pdfPath)) {
-            try {
-                pdfPath = await generateInvoicePDF(invoice, paymentLink);
-            } catch (e) {}
-        }
-
-        // Send email (non-fatal)
-        try {
-            await sendInvoiceEmail(invoice.email, pdfPath, invoice, paymentLink, user);
-        } catch (e) {
-            console.error('⚠️  Resend Email failed (non-fatal):', e.message);
-        }
-
-        // Send WhatsApp
-        sendWhatsAppMessage(invoice, paymentLink, pdfPath, user).catch(e =>
-            console.error('⚠️  Resend WhatsApp failed:', e.message)
-        );
-
+        // Return instant response to UI
         res.status(200).json({ success: true, message: 'Invoice dispatched to WhatsApp & Email!' });
+
+        // Dispatch in background
+        (async () => {
+            let pdfPath = path.join(__dirname, 'generated_pdfs', `invoice_${invoice._id}.pdf`);
+            if (!fs.existsSync(pdfPath)) {
+                try {
+                    pdfPath = await generateInvoicePDF(invoice, paymentLink);
+                } catch (e) {}
+            }
+
+            // Send email
+            sendInvoiceEmail(invoice.email, pdfPath, invoice, paymentLink, user).catch(e =>
+                console.error('⚠️  Resend Email error:', e.message)
+            );
+
+            // Send WhatsApp
+            sendWhatsAppMessage(invoice, paymentLink, pdfPath, user).catch(e =>
+                console.error('⚠️  Resend WhatsApp error:', e.message)
+            );
+        })().catch(err => console.error('⚠️ Resend pipeline error:', err));
     } catch (error) {
         console.error('Resend failed:', error);
         res.status(500).json({ message: 'Failed to send invoice', error: error.message });
