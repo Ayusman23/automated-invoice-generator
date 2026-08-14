@@ -532,10 +532,16 @@ app.post('/api/payment/verify', async (req, res) => {
     }
 });
 
-// ── Basic health-check ───────────────────────────────────────────────────────
-app.get('/', (req, res) => res.send('Invoice Generator Backend API is running!'));
+// ── Health Check (Render / Monitoring) ───────────────────────────────────────
+app.get('/', (req, res) => {
+    res.status(200).send('Invoice Generator Backend API is running!');
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
 
 // ── Start Server ──────────────────────────────────────────────────────────────
-server.listen(PORT, () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server is running on http://0.0.0.0:${PORT}`);
 });

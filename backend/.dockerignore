@@ -1,6 +1,8 @@
 node_modules
 wa_auth
 wa_auth_test
+tokens
+tokens/*
 .wwebjs_auth
 .wwebjs_cache
 generated_pdfs/*

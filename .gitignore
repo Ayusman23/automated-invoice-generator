@@ -26,6 +26,8 @@ backend/uploads/*
 # WhatsApp Authentication & Sessions
 backend/wa_auth/
 backend/wa_auth_test/
+backend/tokens/
+tokens/
 wa_auth/
 wa_auth_test/
 .wwebjs_auth/

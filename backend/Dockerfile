@@ -23,5 +23,6 @@ RUN npm install
 # Copy application files
 COPY . .
 
+ENV PORT=5000
 EXPOSE 5000
 CMD [ "node", "server.js" ]
