@@ -633,6 +633,35 @@ app.post('/api/payment/verify', async (req, res) => {
     }
 });
 
+// ── Diagnostic Endpoint — Test Email Delivery in Production ───────────────────
+app.get('/api/test-email', async (req, res) => {
+    const to = req.query.to || process.env.GMAIL_USER;
+    const { sendInvoiceEmail } = require('./utils/emailSender');
+    try {
+        const dummyInvoice = {
+            _id: 'diag_' + Date.now().toString(36),
+            clientName: 'Diagnostic Recipient',
+            amount: 100,
+            itemName: 'Live Test Invoice'
+        };
+        const info = await sendInvoiceEmail(to, null, dummyInvoice, 'https://automated-invoice-generator-tau.vercel.app');
+        res.status(200).json({
+            success: true,
+            message: `Email successfully sent to ${to}`,
+            smtpUser: process.env.GMAIL_USER,
+            messageId: info?.messageId
+        });
+    } catch (err) {
+        console.error('❌ Diagnostic test-email failed:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message,
+            hint: 'Check that GMAIL_USER and GMAIL_APP_PASSWORD in Render Dashboard environment match your latest 16-char App Password.',
+            code: err.code
+        });
+    }
+});
+
 // ── Proactive Memory Watchdog (Prevents Render 512MB OOM) ───────────────────
 setInterval(() => {
     const mem = process.memoryUsage();

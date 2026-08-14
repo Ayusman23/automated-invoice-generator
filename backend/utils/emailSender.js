@@ -182,6 +182,7 @@ ${adminName}`;
     return info;
   } catch (err) {
     console.error(`❌ Invoice email delivery failed to ${toEmail}:`, err.message);
+    throw err;
   }
 }
 
