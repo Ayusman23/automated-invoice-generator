@@ -5,69 +5,26 @@ const { generateInvoicePDF } = require('./pdfGenerator');
 const { sendRawWhatsApp, sendWhatsAppVoiceNote, sendWhatsAppPdf } = require('./whatsapp');
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Bulletproof Email Dispatcher (OAuth2 with Automatic SMTP Fallback)
+//  Optimized Transporter
 // ─────────────────────────────────────────────────────────────────────────────
-async function sendMailWithFallback(mailOptions, user = null) {
-  const adminName  = user?.name || "InvoicePro Admin";
-  const adminEmail = user?.email || (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+function createTransporter() {
+  const user = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+  const pass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
 
-  // ── 1. Attempt Google OAuth2 (Direct Dispatch from Admin's Gmail) ───────────
-  if (user && user.googleRefreshToken && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    try {
-      console.log(`🔑 Attempting direct Google OAuth2 email send from: "${adminName}" <${user.email}>...`);
-      const oauthTransporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          type:         'OAuth2',
-          user:         user.email,
-          clientId:     process.env.GOOGLE_CLIENT_ID,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-          refreshToken: user.googleRefreshToken,
-          accessToken:  user.googleAccessToken
-        }
-      });
-
-      const info = await oauthTransporter.sendMail({
-        ...mailOptions,
-        from:    `"${adminName}" <${user.email}>`,
-        replyTo: `"${adminName}" <${user.email}>`
-      });
-
-      console.log(`✅ Email sent directly via Google OAuth2 from ${user.email} (Message ID: ${info.messageId})`);
-      return info;
-    } catch (oauthErr) {
-      console.warn(`⚠️ Google OAuth2 dispatch failed (${oauthErr.message}) → Falling back to SMTP relay...`);
-    }
+  if (process.env.SMTP_HOST && process.env.SMTP_HOST !== 'smtp.gmail.com') {
+    return nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: process.env.SMTP_PORT === '465',
+      auth: { user, pass }
+    });
   }
 
-  // ── 2. SMTP Relay Fallback (Guaranteed Delivery) ───────────────────────────
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const secure = port === 465;
-
-  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
-  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
-
-  console.log(`📡 Sending email via SMTP Relay (${host}:${port}) to ${mailOptions.to}...`);
-
-  const smtpTransporter = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: { user: smtpUser, pass: smtpPass }
+  // Ultra-fast Gmail Service Transporter
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass }
   });
-
-  const fromHeader = `"${adminName} via InvoicePro" <${smtpUser}>`;
-  const replyToHeader = `"${adminName}" <${adminEmail}>`;
-
-  const info = await smtpTransporter.sendMail({
-    ...mailOptions,
-    from:    fromHeader,
-    replyTo: replyToHeader
-  });
-
-  console.log(`✅ Email delivered via SMTP relay to ${mailOptions.to} (Message ID: ${info.messageId})`);
-  return info;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,10 +39,18 @@ async function sendInvoiceEmail(toEmail, pdfPath, invoice = {}, paymentLink = ''
     return;
   }
 
+  const transporter    = createTransporter();
   const invoiceIdShort = invoice._id ? String(invoice._id).slice(-8).toUpperCase() : '';
   const amountFmt      = invoice.amount ? Number(invoice.amount).toLocaleString('en-IN') : '';
-  const adminName      = user?.name || "InvoicePro Admin";
-  const adminEmail     = user?.email || (process.env.GMAIL_USER || '').trim();
+
+  const fallbackUser = (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+  const adminName    = user?.name || "InvoicePro Admin";
+  const adminEmail   = user?.email || fallbackUser;
+
+  const fromHeader    = `"${adminName} via InvoicePro" <${fallbackUser}>`;
+  const replyToHeader = `"${adminName}" <${adminEmail}>`;
+
+  console.log(`📤 Dispatching invoice to Client: "${toEmail}" FROM Admin: "${adminName}" <${adminEmail}>...`);
 
   const plainText = 
 `Hi ${invoice.clientName || 'there'},
@@ -109,6 +74,8 @@ Thank you for your business!
 ${adminName}`;
 
   const mailOptions = {
+    from:    fromHeader,
+    replyTo: replyToHeader,
     to:      toEmail,
     subject: `Invoice #${invoiceIdShort} from ${adminName}`,
     text:    plainText,
@@ -210,9 +177,11 @@ ${adminName}`;
   };
 
   try {
-    await sendMailWithFallback(mailOptions, user);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Invoice email delivered to ${toEmail} (Message ID: ${info.messageId})`);
+    return info;
   } catch (err) {
-    console.error(`❌ Final invoice email delivery failed to ${toEmail}:`, err.message);
+    console.error(`❌ Invoice email delivery failed to ${toEmail}:`, err.message);
   }
 }
 
@@ -227,7 +196,8 @@ async function sendPaymentReceiptNotification(invoice, user = null) {
   const dateFmt        = new Date().toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
   const userId         = user ? String(user._id || user) : (invoice.userId ? String(invoice.userId) : null);
   const adminName      = user?.name || "InvoicePro Admin";
-  const adminEmail     = user?.email || (process.env.GMAIL_USER || '').trim();
+  const fallbackUser   = (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+  const adminEmail     = user?.email || fallbackUser;
 
   // ── 1. Regenerate PDF with PAID stamp ────────────────────────────────────
   let pdfPath;
@@ -241,6 +211,7 @@ async function sendPaymentReceiptNotification(invoice, user = null) {
   // ── 2. Email Receipt ─────────────────────────────────────────────────────
   if (invoice.email) {
     try {
+      const transporter = createTransporter();
       const receiptPlainText =
 `Hi ${invoice.clientName || 'there'},
 
@@ -260,6 +231,8 @@ Thank you for your business!
 ${adminName}`;
 
       const receiptMailOptions = {
+        from:    `"${adminName} via InvoicePro" <${fallbackUser}>`,
+        replyTo: `"${adminName}" <${adminEmail}>`,
         to:      invoice.email,
         subject: `Payment Receipt: Invoice #${invoiceIdShort} from ${adminName}`,
         text:    receiptPlainText,
@@ -298,7 +271,8 @@ ${adminName}`;
         attachments: (pdfPath && fs.existsSync(pdfPath)) ? [{ filename: `Invoice_${invoiceIdShort}_PAID.pdf`, path: pdfPath }] : [],
       };
 
-      await sendMailWithFallback(receiptMailOptions, user);
+      const info = await transporter.sendMail(receiptMailOptions);
+      console.log(`✅ Payment receipt email sent to ${invoice.email} (Message ID: ${info.messageId})`);
     } catch (err) {
       console.error('⚠️  Receipt email failed:', err.message);
     }
@@ -343,11 +317,16 @@ async function sendPaymentFailedNotification(invoice, paymentLink = '', user = n
   const amountFmt      = Number(invoice.amount).toLocaleString('en-IN');
   const userId         = user ? String(user._id || user) : (invoice.userId ? String(invoice.userId) : null);
   const adminName      = user?.name || "InvoicePro Admin";
+  const fallbackUser   = (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+  const adminEmail     = user?.email || fallbackUser;
 
   // ── Email ──────────────────────────────────────────────────────────────────
   if (invoice.email) {
     try {
+      const transporter = createTransporter();
       const failMailOptions = {
+        from:    `"${adminName} via InvoicePro" <${fallbackUser}>`,
+        replyTo: `"${adminName}" <${adminEmail}>`,
         to:      invoice.email,
         subject: `Payment Update: Invoice #${invoiceIdShort}`,
         text: `Hi ${invoice.clientName},\n\nWe could not process your payment of INR ${amountFmt} for invoice #${invoiceIdShort}.\nPlease retry: ${paymentLink}\n\nThank you!`,
@@ -377,7 +356,7 @@ async function sendPaymentFailedNotification(invoice, paymentLink = '', user = n
           </div>`,
       };
 
-      await sendMailWithFallback(failMailOptions, user);
+      await transporter.sendMail(failMailOptions);
     } catch (err) {
       console.error('⚠️  Failure email failed:', err.message);
     }
