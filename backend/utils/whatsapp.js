@@ -73,18 +73,10 @@ async function startClient(userId, socket) {
     socket.emit('whatsapp-status', { status: 'INITIALIZING' });
     if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'INITIALIZING' });
 
-    // Clean up stale or incomplete session directory before generating a new QR code
-    const sessionDir = path.join(__dirname, '..', 'wa_auth', `session-user-${userId}`);
-    try {
-        if (fs.existsSync(sessionDir)) {
-            // Remove incomplete session to prevent cryptographic key mismatch on phone QR scan
-            fs.rmSync(sessionDir, { recursive: true, force: true });
-        }
-    } catch (e) {}
-
     const puppeteerConfig = {
         headless: true,
-        protocolTimeout: 180000,
+        protocolTimeout: 240000,
+        ignoreDefaultArgs: ['--enable-automation'],
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -95,7 +87,8 @@ async function startClient(userId, socket) {
             '--disable-extensions',
             '--disable-software-rasterizer',
             '--disable-blink-features=AutomationControlled',
-            '--js-flags=--max-old-space-size=300',
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            '--js-flags=--max-old-space-size=400',
             '--disable-default-apps',
             '--disable-background-networking',
             '--disable-sync',
@@ -112,11 +105,14 @@ async function startClient(userId, socket) {
             dataPath: path.join(__dirname, '..', 'wa_auth')
         }),
         authTimeoutMs: 120000,
-        qrMaxRetries: 20,
+        qrMaxRetries: 25,
         takeoverOnConflict: true,
         puppeteer: puppeteerConfig,
+        webVersion: '2.3000.1041450038-alpha',
         webVersionCache: {
-            type: 'none',
+            type: 'remote',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
+            strict: false
         }
     });
 
@@ -172,6 +168,12 @@ async function startClient(userId, socket) {
         if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'AUTH_FAILED' });
         try { client.destroy(); } catch (e) {}
         activeClients.delete(userId);
+        
+        // Clean up session directory only on explicit auth failure so retry can get a fresh session
+        const sessionDir = path.join(__dirname, '..', 'wa_auth', `session-user-${userId}`);
+        if (fs.existsSync(sessionDir)) {
+            try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (e) {}
+        }
     });
 
     client.on('disconnected', (reason) => {
@@ -190,12 +192,6 @@ async function startClient(userId, socket) {
         try { await client.destroy(); } catch (e) {}
         activeClients.delete(userId);
 
-        // Clear corrupted session directory so retry works cleanly
-        const sessionPath = path.join(__dirname, '..', 'wa_auth', `session-${userId}`);
-        if (fs.existsSync(sessionPath)) {
-            try { fs.rmSync(sessionPath, { recursive: true, force: true }); } catch (e) {}
-        }
-
         socket.emit('whatsapp-status', { status: 'ERROR', error: err.message });
         if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'ERROR', error: err.message });
     }
@@ -204,11 +200,17 @@ async function startClient(userId, socket) {
 function disconnectClient(userId) {
     if (activeClients.has(userId)) {
         const clientData = activeClients.get(userId);
-        clientData.client.logout().catch(e => console.log(e));
-        clientData.client.destroy().catch(e => console.log(e));
+        try { clientData.client.logout().catch(() => {}); } catch (e) {}
+        try { clientData.client.destroy().catch(() => {}); } catch (e) {}
         if (clientData.timeout) clearTimeout(clientData.timeout);
         activeClients.delete(userId);
         console.log(`🛑 Logged out WhatsApp for user: ${userId}`);
+    }
+
+    // Clean up session directory on manual disconnect
+    const sessionDir = path.join(__dirname, '..', 'wa_auth', `session-user-${userId}`);
+    if (fs.existsSync(sessionDir)) {
+        try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (e) {}
     }
 }
 

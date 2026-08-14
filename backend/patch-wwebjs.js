@@ -1,7 +1,7 @@
 /**
  * patch-wwebjs.js
  * Automatically runs after 'npm install' to ensure whatsapp-web.js has the
- * latest Chrome User-Agent and resilient initialization hooks on any environment.
+ * latest Chrome User-Agent, safe ClientInfo evaluate, and resilient initialization hooks on any environment.
  */
 const fs = require('fs');
 const path = require('path');
@@ -42,11 +42,33 @@ try {
             modified = true;
         }
 
+        // Fix ClientInfo evaluation so missing modules during sync do not crash before emitting READY
+        if (client.includes("window.require('WAWebUserPrefsMeUser').getMaybeMePnUser()")) {
+            client = client.replace(
+                /this\.info = new ClientInfo\(\s*this,\s*await this\.pupPage\.evaluate\(\(\) => \{[\s\S]*?\}\),\s*\);/m,
+                `this.info = new ClientInfo(
+                        this,
+                        await this.pupPage.evaluate(() => {
+                            try {
+                                const conn = window.require('WAWebConnModel')?.Conn?.serialize?.() || {};
+                                const userPrefs = window.require('WAWebUserPrefsMeUser');
+                                const wid = userPrefs?.getMaybeMePnUser?.() || userPrefs?.getMaybeMeLidUser?.() || null;
+                                return { ...conn, wid };
+                            } catch (e) {
+                                return { wid: null };
+                            }
+                        }),
+                    );`
+            );
+            modified = true;
+        }
+
         if (modified) {
             fs.writeFileSync(clientPath, client, 'utf8');
-            console.log('✅ Patched whatsapp-web.js Client.js (Lifecycle)');
+            console.log('✅ Patched whatsapp-web.js Client.js (Lifecycle & Sync)');
         }
     }
 } catch (err) {
     console.warn('⚠️  Could not run patch-wwebjs:', err.message);
 }
+
