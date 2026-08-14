@@ -373,15 +373,46 @@ export default function AdminPage() {
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulseDot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
         .pulse-live { animation: pulseDot 1.6s infinite ease-in-out; }
+
+        /* Cross-Device Responsive Layout System */
+        .admin-main { max-width: 1360px; width: 100%; margin: 0 auto; padding: 32px 28px; flex: 1; }
+        .admin-grid { display: grid; grid-template-columns: 390px 1fr; gap: 28px; align-items: start; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-bottom: 28px; }
+        .header-wrap { max-width: 1360px; width: 100%; margin: 0 auto; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .toast-container { position: fixed; top: 80px; right: 28px; z-index: 9999; max-width: 420px; }
+        .item-row { display: grid; grid-template-columns: 1fr 54px 92px 30px; gap: 6px; align-items: center; }
+        .tabs-search-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; }
+        .table-scroll-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        @media (max-width: 1024px) {
+          .admin-grid { grid-template-columns: 1fr !important; gap: 24px; }
+        }
+        @media (max-width: 768px) {
+          .admin-main { padding: 20px 16px; }
+          .header-wrap { padding: 0 16px; }
+          .user-pill-email { display: none !important; }
+        }
+        @media (max-width: 600px) {
+          .metrics-grid { grid-template-columns: 1fr 1fr !important; gap: 10px; }
+          .toast-container { top: 74px; right: 12px; left: 12px; max-width: none; }
+          .tabs-search-row { flex-direction: column; align-items: stretch !important; gap: 12px; }
+          .filter-search-group { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+          .search-input-wrap { width: 100% !important; }
+        }
+        @media (max-width: 420px) {
+          .metrics-grid { grid-template-columns: 1fr !important; }
+          .item-row { grid-template-columns: 1fr 48px 80px 26px; gap: 4px; }
+        }
       `}</style>
 
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
       <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(250,249,246,0.95)', backdropFilter: 'blur(10px)', borderBottom: '1px solid #E4E1DA', height: '68px', display: 'flex', alignItems: 'center' }}>
-        <div style={{ maxWidth: '1360px', width: '100%', margin: '0 auto', padding: '0 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="header-wrap">
           
           {/* Brand */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '34px', height: '34px', background: '#16345C', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF' }}>
+            <div style={{ width: '34px', height: '34px', background: '#16345C', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', flexShrink: 0 }}>
               <IconReceipt size={20} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -391,25 +422,25 @@ export default function AdminPage() {
           </div>
 
           {/* User Profile & Global Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div className="header-actions">
             {user && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 12px 5px 6px', background: '#FFFFFF', border: '1px solid #E4E1DA', borderRadius: '100px' }}>
-                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#16345C', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700 }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#16345C', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, flexShrink: 0 }}>
                   {(user.name || user.email || 'U')[0].toUpperCase()}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <span style={{ fontSize: '13px', fontWeight: 600, color: '#10151F', lineHeight: 1.1 }}>{user.name || 'Admin'}</span>
-                  <span className="mono" style={{ fontSize: '10.5px', color: '#8B93A1' }}>{user.email}</span>
+                  <span className="mono user-pill-email" style={{ fontSize: '10.5px', color: '#8B93A1' }}>{user.email}</span>
                 </div>
               </div>
             )}
 
             <button className="btn-secondary" onClick={fetchInvoices} title="Refresh Invoices">
-              <IconRefresh size={15} /> Refresh
+              <IconRefresh size={15} /> <span className="btn-text-hide">Refresh</span>
             </button>
 
             <button className="btn-secondary" onClick={handleLogout} style={{ color: '#B91C1C', borderColor: '#FECACA' }} title="Log out">
-              <IconLogOut size={15} /> Logout
+              <IconLogOut size={15} /> <span className="btn-text-hide">Logout</span>
             </button>
           </div>
         </div>
@@ -417,12 +448,11 @@ export default function AdminPage() {
 
       {/* ── Toast Alert ──────────────────────────────────────────────────── */}
       {notification && (
-        <div style={{
-          position: 'fixed', top: '80px', right: '28px', zIndex: 9999,
+        <div className="toast-container" style={{
           background: notification.type === 'error' ? '#FEE2E2' : notification.type === 'info' ? '#E0F2FE' : '#EBF7F0',
           color: notification.type === 'error' ? '#991B1B' : notification.type === 'info' ? '#075985' : '#065F46',
           border: `1px solid ${notification.type === 'error' ? '#FECACA' : notification.type === 'info' ? '#BAE6FD' : '#C6E7D2'}`,
-          borderRadius: '10px', padding: '14px 20px', maxWidth: '420px', fontSize: '14px', fontWeight: 600,
+          borderRadius: '10px', padding: '14px 20px', fontSize: '14px', fontWeight: 600,
           boxShadow: '0 10px 30px rgba(16,21,31,0.12)', display: 'flex', alignItems: 'center', gap: '10px'
         }}>
           <span>{notification.type === 'error' ? '⚠️' : notification.type === 'info' ? 'ℹ️' : '✓'}</span>
@@ -456,10 +486,10 @@ export default function AdminPage() {
       )}
 
       {/* ── Main Workspace ───────────────────────────────────────────────── */}
-      <main style={{ maxWidth: '1360px', width: '100%', margin: '0 auto', padding: '32px 28px', flex: 1 }}>
+      <main className="admin-main">
         
         {/* Top KPI Metrics Strip */}
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+        <section className="metrics-grid">
           
           <div className="card-surface" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
@@ -509,7 +539,7 @@ export default function AdminPage() {
         </section>
 
         {/* ── Two-Column Layout ────────────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: '28px', alignItems: 'start' }}>
+        <div className="admin-grid">
           
           {/* LEFT COLUMN: Create Form & WhatsApp Gateway */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -591,7 +621,7 @@ export default function AdminPage() {
                   <button className="btn-action-icon" onClick={() => ocrInputRef.current?.click()} disabled={ocrLoading} title="Scan handwritten invoice (AI OCR)">
                     {ocrLoading ? <span style={{ animation: 'spin 1s linear infinite' }}>⏳</span> : <IconCamera size={16} />}
                   </button>
-                  <input ref={ocrInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleOcrUpload} />
+                  <input ref={ocrInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleOcrUpload} />
 
                   <button className="btn-action-icon" onClick={() => setShowOcrGuide(v => !v)} title="Handwriting OCR format guide">
                     <IconHelp size={16} />
@@ -681,7 +711,7 @@ Total:  5000`}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {items.map((item, idx) => (
-                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 54px 92px 30px', gap: '6px', alignItems: 'center' }}>
+                      <div key={idx} className="item-row">
                         <input className="input-base" style={{ padding: '8px 10px', fontSize: '13px' }} type="text" value={item.name} onChange={e => updateItem(idx, 'name', e.target.value)} placeholder="Item description" required />
                         <input className="input-base" style={{ padding: '8px 6px', fontSize: '13px', textAlign: 'center' }} type="number" min="1" value={item.qty} onChange={e => updateItem(idx, 'qty', e.target.value)} />
                         <div style={{ position: 'relative' }}>
@@ -723,7 +753,7 @@ Total:  5000`}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
             {/* Header / Tabs / Search Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+            <div className="tabs-search-row">
               
               {/* Tab Switcher */}
               <div style={{ display: 'inline-flex', background: '#FFFFFF', border: '1px solid #E4E1DA', borderRadius: '10px', padding: '4px', boxShadow: '0 1px 3px rgba(16,21,31,0.04)' }}>
@@ -755,14 +785,14 @@ Total:  5000`}
 
               {/* Status Filter & Search */}
               {activeTab === 'invoices' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  <div style={{ position: 'relative', width: '220px' }}>
+                <div className="filter-search-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <div className="search-input-wrap" style={{ position: 'relative', width: '220px' }}>
                     <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: '#8B93A1' }}>
                       <IconSearch size={15} />
                     </span>
                     <input 
                       className="input-base" 
-                      style={{ padding: '8px 12px 8px 34px', fontSize: '13px' }} 
+                      style={{ padding: '8px 12px 8px 34px', fontSize: '13px', width: '100%' }} 
                       type="text" 
                       value={searchQuery} 
                       onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }} 
@@ -800,8 +830,8 @@ Total:  5000`}
                   </div>
                 ) : (
                   <>
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px' }}>
+                    <div className="table-scroll-container">
+                      <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px' }}>
                         <thead>
                           <tr style={{ background: '#FAF9F6', borderBottom: '1px solid #E4E1DA', color: '#6B7280', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                             <th style={{ padding: '14px 20px', fontWeight: 600 }}>Client &amp; Contact</th>

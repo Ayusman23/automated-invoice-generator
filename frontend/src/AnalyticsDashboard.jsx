@@ -122,7 +122,7 @@ export default function AnalyticsDashboard() {
       </div>
 
       {/* ── Charts Row ──────────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: '20px' }}>
 
         {/* Bar Chart — Monthly Revenue */}
         <div style={cardStyle}>
