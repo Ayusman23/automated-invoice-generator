@@ -21,18 +21,18 @@ export default function Settings() {
         setSocket(newSocket);
 
         if (user?._id) {
-            newSocket.emit('get-whatsapp-status', { userId: user._id });
+            newSocket.emit('get-whatsapp-status', { userId: String(user._id) });
         }
 
         newSocket.on('whatsapp-qr', (data) => {
-            if (!data.userId || data.userId === user?._id) {
+            if (!data.userId || String(data.userId) === String(user?._id)) {
                 setQrCode(data.qr);
                 setWaStatus('QR_READY');
             }
         });
 
         newSocket.on('whatsapp-status', (data) => {
-            if (!data.userId || data.userId === user?._id) {
+            if (!data.userId || String(data.userId) === String(user?._id)) {
                 setWaStatus(data.status);
                 if (data.status === 'READY') {
                     setQrCode(null);
@@ -45,13 +45,14 @@ export default function Settings() {
 
     const startWhatsApp = () => {
         if (socket && user) {
-            socket.emit('start-whatsapp', { userId: user._id });
+            setWaStatus('INITIALIZING');
+            socket.emit('start-whatsapp', { userId: String(user._id) });
         }
     };
 
     const disconnectWhatsApp = () => {
         if (socket && user) {
-            socket.emit('disconnect-whatsapp', { userId: user._id });
+            socket.emit('disconnect-whatsapp', { userId: String(user._id) });
         }
     };
 

@@ -59,17 +59,17 @@ export default function AdminPage() {
     });
     setWaSocket(s);
     if (user?._id) {
-      s.emit('get-whatsapp-status', { userId: user._id });
+      s.emit('get-whatsapp-status', { userId: String(user._id) });
     }
     s.on('whatsapp-qr', (d) => {
-      if (!d.userId || d.userId === user?._id) {
+      if (!d.userId || String(d.userId) === String(user?._id)) {
         setWaQr(d.qr);
         setWaStatus('QR_READY');
         setWaExpanded(true);
       }
     });
     s.on('whatsapp-status', (d) => {
-      if (!d.userId || d.userId === user?._id) {
+      if (!d.userId || String(d.userId) === String(user?._id)) {
         setWaStatus(d.status);
         if (d.status === 'READY') {
           setWaQr(null);
@@ -83,13 +83,13 @@ export default function AdminPage() {
     if (waSocket && user) {
       setWaStatus('INITIALIZING');
       setWaExpanded(true);
-      waSocket.emit('start-whatsapp', { userId: user._id });
+      waSocket.emit('start-whatsapp', { userId: String(user._id) });
     }
   };
 
   const disconnectWhatsApp = () => {
     if (waSocket && user) {
-      waSocket.emit('disconnect-whatsapp', { userId: user._id });
+      waSocket.emit('disconnect-whatsapp', { userId: String(user._id) });
       setWaStatus('DISCONNECTED');
       setWaQr(null);
     }
@@ -574,9 +574,15 @@ export default function AdminPage() {
                 ) : null}
 
                 {waStatus === 'INITIALIZING' && (
-                  <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                  <div style={{ textAlign: 'center', padding: '16px 0' }}>
                     <div style={{ width: '32px', height: '32px', border: '3px solid #0E7C4A', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-                    <p style={{ fontSize: '13px', color: '#4B5361', fontWeight: 500 }}>Initializing browser session…</p>
+                    <p style={{ fontSize: '13px', color: '#10151F', fontWeight: 600 }}>Initializing WhatsApp session…</p>
+                    <p style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px', maxWidth: '280px', margin: '4px auto 14px' }}>
+                      Launching browser container on server. Generating QR code (takes ~15–30s on cloud)…
+                    </p>
+                    <button className="btn-secondary" onClick={startWhatsApp} style={{ fontSize: '12px', padding: '5px 12px' }}>
+                      <IconRefresh size={13} /> Retry / Restart Session
+                    </button>
                   </div>
                 )}
 

@@ -73,9 +73,22 @@ async function startClient(userId, socket) {
     socket.emit('whatsapp-status', { status: 'INITIALIZING' });
     if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'INITIALIZING' });
 
+    // Clean up stale session lock files left behind by prior crashes
+    const sessionDir = path.join(__dirname, '..', 'wa_auth', `session-user-${userId}`);
+    try {
+        if (fs.existsSync(sessionDir)) {
+            ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort'].forEach(file => {
+                const filePath = path.join(sessionDir, file);
+                if (fs.existsSync(filePath)) {
+                    try { fs.unlinkSync(filePath); } catch (e) {}
+                }
+            });
+        }
+    } catch (e) {}
+
     const puppeteerConfig = {
         headless: true,
-        protocolTimeout: 120000,
+        protocolTimeout: 180000,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -83,8 +96,15 @@ async function startClient(userId, socket) {
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
+            '--single-process',
             '--disable-gpu',
-            '--disable-extensions'
+            '--disable-extensions',
+            '--disable-software-rasterizer',
+            '--js-flags=--max-old-space-size=256',
+            '--disable-default-apps',
+            '--disable-background-networking',
+            '--disable-sync',
+            '--mute-audio'
         ],
     };
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
@@ -97,6 +117,9 @@ async function startClient(userId, socket) {
             dataPath: path.join(__dirname, '..', 'wa_auth')
         }),
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        authTimeoutMs: 120000,
+        qrMaxRetries: 20,
+        takeoverOnConflict: true,
         puppeteer: puppeteerConfig,
         webVersionCache: {
             type: 'none',
