@@ -32,6 +32,7 @@ const { extractInvoiceData } = require('./utils/ocr');
 const { predictRisk }        = require('./utils/riskPredictor');
 
 const app  = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 10000;
 
 // ── Socket.io Setup ───────────────────────────────────────────────────────────

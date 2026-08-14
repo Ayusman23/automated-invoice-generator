@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { io } from 'socket.io-client';
+import { API_URL } from '../api';
 import './Settings.css';
 
 export default function Settings() {
@@ -10,7 +11,7 @@ export default function Settings() {
     const [socket, setSocket] = useState(null);
 
     useEffect(() => {
-        const newSocket = io(import.meta.env.VITE_API_URL || 'https://automated-invoice-generator-backend.onrender.com');
+        const newSocket = io(API_URL);
         setSocket(newSocket);
 
         if (user?._id) {

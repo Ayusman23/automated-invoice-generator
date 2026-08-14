@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import AnalyticsDashboard from '../AnalyticsDashboard';
 import { useAuth } from '../context/AuthContext';
-import API from '../api';
+import API, { API_URL } from '../api';
 
 /* ---------- SVG Line Icons (Matching LandingPage style) ---------- */
 const Icon = ({ children, size = 18 }) => (
@@ -50,7 +50,7 @@ export default function AdminPage() {
   const [waExpanded, setWaExpanded] = useState(false);
 
   useEffect(() => {
-    const s = io(import.meta.env.VITE_API_URL || 'https://automated-invoice-generator-backend.onrender.com');
+    const s = io(API_URL);
     setWaSocket(s);
     if (user?._id) {
       s.emit('get-whatsapp-status', { userId: user._id });

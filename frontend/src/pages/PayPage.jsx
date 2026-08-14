@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_URL } from '../api';
+const API_BASE = API_URL;
 
 // ─── Design Tokens (same system as AdminPage) ─────────────────────────────────
 const C = {
