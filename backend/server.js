@@ -98,6 +98,59 @@ app.use((req, res, next) => {
     }
 });
 
+// ── Rate Limiting (Security hardening) ────────────────────────────────────────
+const rateLimit = require('express-rate-limit');
+
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 250,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many requests from this IP, please try again after 15 minutes.' }
+});
+app.use('/api', apiLimiter);
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    message: { message: 'Too many authentication attempts, please try again in 15 minutes.' }
+});
+app.use('/api/auth/login', authLimiter);
+const invoiceCreateLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 50,
+    message: { message: 'Invoice creation limit reached, please slow down.' }
+});
+
+const paymentLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 60,
+    message: { message: 'Too many payment requests, please try again shortly.' }
+});
+app.use('/api/payment', paymentLimiter);
+
+// ── Input Validation Middleware ─────────────────────────────────────────────
+function validateInvoiceInput(req, res, next) {
+    const { clientName, email, amount, items } = req.body;
+    if (!clientName || typeof clientName !== 'string' || !clientName.trim()) {
+        return res.status(400).json({ message: 'Client name is required.' });
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+        return res.status(400).json({ message: 'A valid email address is required.' });
+    }
+    if (items && Array.isArray(items) && items.length > 0) {
+        for (const it of items) {
+            if (!it.name || !it.name.trim() || isNaN(Number(it.price)) || Number(it.price) < 0) {
+                return res.status(400).json({ message: 'All line items must have a valid description and non-negative price.' });
+            }
+        }
+    } else if (isNaN(Number(amount)) || Number(amount) <= 0) {
+        return res.status(400).json({ message: 'Invoice amount must be a positive number.' });
+    }
+    next();
+}
+
 // ── Auth Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/auth'));
 
@@ -163,7 +216,7 @@ const upload = multer({
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── POST /api/invoices — Create a new invoice ────────────────────────────────
-app.post('/api/invoices', requireAuth, async (req, res) => {
+app.post('/api/invoices', requireAuth, invoiceCreateLimiter, validateInvoiceInput, async (req, res) => {
     try {
         const body = { ...req.body, userId: req.user };
 

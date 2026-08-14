@@ -9,8 +9,24 @@ const createToken = (_id) => {
     return jwt.sign({ _id }, process.env.JWT_SECRET || 'supersecretjwtkey', { expiresIn: '7d' });
 };
 
+// ── Input Validation Middleware ─────────────────────────────────────────────
+const validateAuthInput = (req, res, next) => {
+    const { email, password, name } = req.body;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+        return res.status(400).json({ error: 'A valid email address is required.' });
+    }
+    if (!password || typeof password !== 'string' || password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+    }
+    if (req.path === '/signup' && (!name || typeof name !== 'string' || name.trim().length < 2)) {
+        return res.status(400).json({ error: 'Name must be at least 2 characters long.' });
+    }
+    next();
+};
+
 // ── Email/Password Signup ─────────────────────────────────────────────────────
-router.post('/signup', async (req, res) => {
+router.post('/signup', validateAuthInput, async (req, res) => {
     const { name, email, password } = req.body;
     try {
         let user = await User.findOne({ email });
@@ -19,17 +35,17 @@ router.post('/signup', async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        user = await User.create({ name, email, password: hashedPassword });
+        user = await User.create({ name: name.trim(), email: email.toLowerCase().trim(), password: hashedPassword });
         const token = createToken(user._id);
 
-        res.status(201).json({ email, name, token, _id: user._id });
+        res.status(201).json({ email: user.email, name: user.name, token, _id: user._id });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
 // ── Email/Password Login ──────────────────────────────────────────────────────
-router.post('/login', async (req, res) => {
+router.post('/login', validateAuthInput, async (req, res) => {
     const { email, password } = req.body;
     try {
         const user = await User.findOne({ email });
