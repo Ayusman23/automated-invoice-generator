@@ -60,10 +60,11 @@ router.get('/google', passport.authenticate('google', {
     prompt: 'consent'
 }));
 
-router.get('/google/callback', passport.authenticate('google', { failureRedirect: `${process.env.FRONTEND_URL}/login` }), (req, res) => {
+router.get('/google/callback', passport.authenticate('google', { failureRedirect: `${process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app'}/login` }), (req, res) => {
     // Successful authentication, generate JWT and redirect to frontend with token in URL (or send via cookie)
+    const frontendUrl = process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app';
     const token = createToken(req.user._id);
-    res.redirect(`${process.env.FRONTEND_URL}/oauth-callback?token=${token}&id=${req.user._id}&name=${encodeURIComponent(req.user.name)}&email=${encodeURIComponent(req.user.email)}`);
+    res.redirect(`${frontendUrl}/oauth-callback?token=${token}&id=${req.user._id}&name=${encodeURIComponent(req.user.name)}&email=${encodeURIComponent(req.user.email)}`);
 });
 
 // ── Get Current User Details ──────────────────────────────────────────────────

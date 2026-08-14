@@ -146,7 +146,7 @@ app.post('/api/invoices', requireAuth, async (req, res) => {
         const user         = await User.findById(req.user);
 
         // ── Generate unique client-facing payment link ──────────────────
-        const FRONTEND_URL  = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const FRONTEND_URL  = process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app';
         const paymentLink   = `${FRONTEND_URL}/pay/${savedInvoice._id}`;
 
         // Generate PDF (non-fatal — email is still sent even if PDF fails)
@@ -220,7 +220,7 @@ app.post('/api/invoices/:id/resend', requireAuth, async (req, res) => {
         if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
 
         const user = await User.findById(req.user);
-        const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const FRONTEND_URL = process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app';
         const paymentLink  = `${FRONTEND_URL}/pay/${invoice._id}`;
 
         let pdfPath = path.join(__dirname, 'generated_pdfs', `invoice_${invoice._id}.pdf`);
@@ -374,7 +374,7 @@ app.post('/api/payment/webhook', async (req, res) => {
             const invoice = await Invoice.findOne({ razorpayOrderId: orderId });
             if (invoice) {
                 // DO NOT change status to PAID
-                const FRONTEND_URL  = process.env.FRONTEND_URL || 'http://localhost:5173';
+                const FRONTEND_URL  = process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app';
                 const paymentLink   = `${FRONTEND_URL}/pay/${invoice._id}`;
 
                 sendPaymentFailedNotification(invoice, paymentLink).catch(err =>

@@ -50,7 +50,7 @@ export default function AdminPage() {
   const [waExpanded, setWaExpanded] = useState(false);
 
   useEffect(() => {
-    const s = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+    const s = io(import.meta.env.VITE_API_URL || 'https://automated-invoice-generator-backend.onrender.com');
     setWaSocket(s);
     if (user?._id) {
       s.emit('get-whatsapp-status', { userId: user._id });

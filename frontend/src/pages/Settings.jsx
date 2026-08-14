@@ -10,7 +10,7 @@ export default function Settings() {
     const [socket, setSocket] = useState(null);
 
     useEffect(() => {
-        const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+        const newSocket = io(import.meta.env.VITE_API_URL || 'https://automated-invoice-generator-backend.onrender.com');
         setSocket(newSocket);
 
         if (user?._id) {
