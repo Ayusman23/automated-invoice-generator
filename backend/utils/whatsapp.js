@@ -1,14 +1,19 @@
-const { Client, NoAuth, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
+const User = require('../models/User');
 
-// Map of active WhatsApp clients keyed by userId
+// Map of active WhatsApp sockets keyed by userId
 const activeClients = new Map();
 let socketIo = null;
 
-// Idle timeout for WhatsApp clients (30 minutes)
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+// Auth directory
+const AUTH_BASE_DIR = path.join(__dirname, '..', 'wa_auth');
+if (!fs.existsSync(AUTH_BASE_DIR)) {
+    try { fs.mkdirSync(AUTH_BASE_DIR, { recursive: true }); } catch (e) {}
+}
 
 function initWhatsApp(io) {
     socketIo = io;
@@ -23,8 +28,8 @@ function initWhatsApp(io) {
 
         socket.on('disconnect-whatsapp', async ({ userId }) => {
             if (!userId) return;
-            disconnectClient(userId);
-            socket.emit('whatsapp-status', { status: 'DISCONNECTED' });
+            await disconnectClient(userId);
+            socket.emit('whatsapp-status', { status: 'DISCONNECTED', userId });
             if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'DISCONNECTED' });
         });
 
@@ -33,12 +38,22 @@ function initWhatsApp(io) {
             if (activeClients.has(userId)) {
                 const clientData = activeClients.get(userId);
                 if (clientData.isReady) {
-                    socket.emit('whatsapp-status', { status: 'READY' });
+                    socket.emit('whatsapp-status', { status: 'READY', userId });
                 } else if (clientData.lastQr) {
-                    socket.emit('whatsapp-qr', { qr: clientData.lastQr });
-                    socket.emit('whatsapp-status', { status: 'QR_READY', qr: clientData.lastQr });
+                    socket.emit('whatsapp-qr', { qr: clientData.lastQr, userId });
+                    socket.emit('whatsapp-status', { status: 'QR_READY', qr: clientData.lastQr, userId });
                 } else if (clientData.isInitializing) {
-                    socket.emit('whatsapp-status', { status: 'INITIALIZING' });
+                    socket.emit('whatsapp-status', { status: 'INITIALIZING', userId });
+                }
+            } else {
+                // Check if existing saved session credentials exist
+                const userAuthDir = path.join(AUTH_BASE_DIR, `user-${userId}`);
+                const credsFile = path.join(userAuthDir, 'creds.json');
+                if (fs.existsSync(credsFile)) {
+                    // Start socket silently in background to restore session
+                    startClient(userId, socket);
+                } else {
+                    socket.emit('whatsapp-status', { status: 'DISCONNECTED', userId });
                 }
             }
         });
@@ -49,196 +64,155 @@ async function startClient(userId, socket) {
     if (activeClients.has(userId)) {
         const existing = activeClients.get(userId);
         if (existing.isReady) {
-            socket.emit('whatsapp-status', { status: 'READY' });
+            if (socket) socket.emit('whatsapp-status', { status: 'READY', userId });
+            if (socketIo) socketIo.emit('whatsapp-status', { status: 'READY', userId });
             return;
         }
         if (existing.isInitializing) {
             if (existing.lastQr) {
-                socket.emit('whatsapp-qr', { qr: existing.lastQr });
-                socket.emit('whatsapp-status', { status: 'QR_READY', qr: existing.lastQr });
+                if (socket) {
+                    socket.emit('whatsapp-qr', { qr: existing.lastQr, userId });
+                    socket.emit('whatsapp-status', { status: 'QR_READY', qr: existing.lastQr, userId });
+                }
             } else {
-                socket.emit('whatsapp-status', { status: 'INITIALIZING' });
+                if (socket) socket.emit('whatsapp-status', { status: 'INITIALIZING', userId });
             }
             return;
         }
-        // If an old non-ready client exists, destroy it before restarting
-        try {
-            if (existing.client) await existing.client.destroy();
-        } catch (e) {}
-        activeClients.delete(userId);
-        if (global.gc) { try { global.gc(); } catch (e) {} }
-        await new Promise(r => setTimeout(r, 1000));
     }
 
-    console.log(`🔄 Starting WhatsApp client for user: ${userId}`);
-    socket.emit('whatsapp-status', { status: 'INITIALIZING' });
+    console.log(`🔄 Starting Baileys WhatsApp client (ultra-low memory) for user: ${userId}`);
+    if (socket) socket.emit('whatsapp-status', { status: 'INITIALIZING', userId });
     if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'INITIALIZING' });
 
-    const puppeteerConfig = {
-        headless: true,
-        protocolTimeout: 240000,
-        ignoreDefaultArgs: ['--enable-automation'],
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--disable-gpu',
-            '--disable-extensions',
-            '--disable-software-rasterizer',
-            '--disable-blink-features=AutomationControlled',
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-            '--js-flags=--max-old-space-size=128',
-            '--disable-default-apps',
-            '--disable-background-networking',
-            '--disable-sync',
-            '--disable-translate',
-            '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process,Translate,OptimizationHints,MediaRouter,CalculateNativeWinOcclusion',
-            '--mute-audio',
-            '--disk-cache-size=1048576'
-        ],
-    };
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    const userAuthDir = path.join(AUTH_BASE_DIR, `user-${userId}`);
+    if (!fs.existsSync(userAuthDir)) {
+        try { fs.mkdirSync(userAuthDir, { recursive: true }); } catch (e) {}
     }
 
-    const client = new Client({
-        authStrategy: new LocalAuth({
-            clientId: `user-${userId}`,
-            dataPath: path.join(__dirname, '..', 'wa_auth')
-        }),
-        authTimeoutMs: 120000,
-        qrMaxRetries: 25,
-        takeoverOnConflict: true,
-        puppeteer: puppeteerConfig,
-        webVersionCache: {
-            type: 'local'
-        }
-    });
-
-    const clientData = {
-        client,
-        isReady: false,
-        isInitializing: true,
-        lastQr: null,
-        timeout: null
-    };
-    activeClients.set(userId, clientData);
-
-    const resetIdleTimeout = () => {
-        if (clientData.timeout) clearTimeout(clientData.timeout);
-        clientData.timeout = setTimeout(() => {
-            console.log(`💤 Idle timeout reached for user ${userId}, destroying client to save RAM.`);
-            try { client.destroy(); } catch (e) {}
-            activeClients.delete(userId);
-            if (global.gc) { try { global.gc(); } catch (e) {} }
-        }, IDLE_TIMEOUT_MS);
-    };
-
-    client.on('qr', (qr) => {
-        clientData.lastQr = qr;
-        console.log(`\n📱 Scan this QR code in WhatsApp for user: ${userId}`);
-        try {
-            qrcode.generate(qr, { small: true });
-        } catch (e) {}
-        socket.emit('whatsapp-qr', { qr });
-        socket.emit('whatsapp-status', { status: 'QR_READY', qr });
-        if (socketIo) {
-            socketIo.emit('whatsapp-qr', { userId, qr });
-            socketIo.emit('whatsapp-status', { userId, status: 'QR_READY', qr });
-        }
-    });
-
-    client.on('ready', () => {
-        clientData.isReady = true;
-        clientData.isInitializing = false;
-        clientData.lastQr = null;
-        console.log(`✅ WhatsApp ready for user: ${userId}`);
-        socket.emit('whatsapp-status', { status: 'READY' });
-        if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'READY' });
-        resetIdleTimeout();
-    });
-
-    client.on('authenticated', () => {
-        console.log(`✅ WhatsApp authenticated for user: ${userId}`);
-    });
-
-    client.on('auth_failure', (msg) => {
-        console.error(`⚠️ WhatsApp auth failure for user ${userId}:`, msg);
-        socket.emit('whatsapp-status', { status: 'AUTH_FAILED' });
-        if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'AUTH_FAILED' });
-        try { client.destroy(); } catch (e) {}
-        activeClients.delete(userId);
-        
-        // Clean up session directory only on explicit auth failure so retry can get a fresh session
-        const sessionDir = path.join(__dirname, '..', 'wa_auth', `session-user-${userId}`);
-        if (fs.existsSync(sessionDir)) {
-            try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (e) {}
-        }
-    });
-
-    client.on('disconnected', (reason) => {
-        console.log(`⚠️ WhatsApp disconnected for user ${userId}:`, reason);
-        socket.emit('whatsapp-status', { status: 'DISCONNECTED' });
-        if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'DISCONNECTED' });
-        if (clientData.timeout) clearTimeout(clientData.timeout);
-        try { client.destroy(); } catch (e) {}
-        activeClients.delete(userId);
-    });
-
     try {
-        await client.initialize();
-    } catch (err) {
-        console.error(`⚠️ WhatsApp init error for user ${userId}:`, err.message);
-        try { await client.destroy(); } catch (e) {}
-        activeClients.delete(userId);
+        const { state, saveCreds } = await useMultiFileAuthState(userAuthDir);
+        const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
-        socket.emit('whatsapp-status', { status: 'ERROR', error: err.message });
-        if (socketIo) socketIo.emit('whatsapp-status', { userId, status: 'ERROR', error: err.message });
+        const sock = makeWASocket({
+            version,
+            auth: state,
+            printQRInTerminal: false,
+            logger: pino({ level: 'silent' }),
+            browser: ['InvoicePro', 'Chrome', '125.0.0.0'],
+            generateHighQualityLinkPreview: false,
+            syncFullHistory: false // Keep memory ultra-light, don't download historical chat logs
+        });
+
+        const clientData = {
+            sock,
+            isReady: false,
+            isInitializing: true,
+            lastQr: null
+        };
+        activeClients.set(userId, clientData);
+
+        sock.ev.on('creds.update', saveCreds);
+
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
+
+            if (qr) {
+                clientData.lastQr = qr;
+                console.log(`\n📱 Scan this QR code in WhatsApp for user: ${userId}`);
+                try { qrcode.generate(qr, { small: true }); } catch (e) {}
+
+                if (socket) {
+                    socket.emit('whatsapp-qr', { qr, userId });
+                    socket.emit('whatsapp-status', { status: 'QR_READY', qr, userId });
+                }
+                if (socketIo) {
+                    socketIo.emit('whatsapp-qr', { qr, userId });
+                    socketIo.emit('whatsapp-status', { status: 'QR_READY', qr, userId });
+                }
+            }
+
+            if (connection === 'open') {
+                console.log(`✅ WhatsApp successfully connected (READY) for user: ${userId}`);
+                clientData.isReady = true;
+                clientData.isInitializing = false;
+                clientData.lastQr = null;
+
+                try {
+                    await User.findByIdAndUpdate(userId, { whatsappConnected: true });
+                } catch (e) {}
+
+                if (socket) socket.emit('whatsapp-status', { status: 'READY', userId });
+                if (socketIo) socketIo.emit('whatsapp-status', { status: 'READY', userId });
+            }
+
+            if (connection === 'close') {
+                const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+                const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+                console.log(`⚠️ WhatsApp connection closed for user ${userId} (Status: ${statusCode}, Reconnect: ${shouldReconnect})`);
+
+                clientData.isReady = false;
+                clientData.isInitializing = false;
+
+                if (shouldReconnect) {
+                    console.log(`🔄 Reconnecting WhatsApp client for user: ${userId}...`);
+                    setTimeout(() => startClient(userId, null), 3000);
+                } else {
+                    console.log(`🛑 User ${userId} logged out from WhatsApp.`);
+                    activeClients.delete(userId);
+                    try {
+                        await User.findByIdAndUpdate(userId, { whatsappConnected: false });
+                    } catch (e) {}
+                    if (fs.existsSync(userAuthDir)) {
+                        try { fs.rmSync(userAuthDir, { recursive: true, force: true }); } catch (e) {}
+                    }
+                    if (socket) socket.emit('whatsapp-status', { status: 'DISCONNECTED', userId });
+                    if (socketIo) socketIo.emit('whatsapp-status', { status: 'DISCONNECTED', userId });
+                }
+            }
+        });
+    } catch (err) {
+        console.error(`❌ Baileys startup failed for user ${userId}:`, err.message);
+        activeClients.delete(userId);
+        if (socket) socket.emit('whatsapp-status', { status: 'ERROR', error: err.message, userId });
+        if (socketIo) socketIo.emit('whatsapp-status', { status: 'ERROR', error: err.message, userId });
     }
 }
 
-function disconnectClient(userId) {
+async function disconnectClient(userId) {
     if (activeClients.has(userId)) {
         const clientData = activeClients.get(userId);
-        try { clientData.client.logout().catch(() => {}); } catch (e) {}
-        try { clientData.client.destroy().catch(() => {}); } catch (e) {}
-        if (clientData.timeout) clearTimeout(clientData.timeout);
+        try {
+            if (clientData.sock) {
+                await clientData.sock.logout().catch(() => {});
+                clientData.sock.end();
+            }
+        } catch (e) {}
         activeClients.delete(userId);
-        console.log(`🛑 Logged out WhatsApp for user: ${userId}`);
+        console.log(`🛑 Disconnected Baileys WhatsApp client for user: ${userId}`);
     }
 
-    // Clean up session directory on manual disconnect
-    const sessionDir = path.join(__dirname, '..', 'wa_auth', `session-user-${userId}`);
-    if (fs.existsSync(sessionDir)) {
-        try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (e) {}
+    try {
+        await User.findByIdAndUpdate(userId, { whatsappConnected: false });
+    } catch (e) {}
+
+    const userAuthDir = path.join(AUTH_BASE_DIR, `user-${userId}`);
+    if (fs.existsSync(userAuthDir)) {
+        try { fs.rmSync(userAuthDir, { recursive: true, force: true }); } catch (e) {}
     }
 }
 
 async function getReadyClient(userId) {
     if (userId && activeClients.has(userId)) {
         const clientData = activeClients.get(userId);
-        if (clientData.isReady) {
-            if (clientData.timeout) clearTimeout(clientData.timeout);
-            clientData.timeout = setTimeout(() => {
-                console.log(`💤 Idle timeout reached for user ${userId}, destroying client.`);
-                clientData.client.destroy();
-                activeClients.delete(userId);
-            }, IDLE_TIMEOUT_MS);
-            return clientData.client;
+        if (clientData.isReady && clientData.sock) {
+            return clientData.sock;
         }
     }
     // Fallback: If only 1 ready client exists across all users, use it
     for (const [uid, clientData] of activeClients.entries()) {
-        if (clientData.isReady) {
-            if (clientData.timeout) clearTimeout(clientData.timeout);
-            clientData.timeout = setTimeout(() => {
-                console.log(`💤 Idle timeout reached for user ${uid}, destroying client.`);
-                clientData.client.destroy();
-                activeClients.delete(uid);
-            }, IDLE_TIMEOUT_MS);
-            return clientData.client;
+        if (clientData.isReady && clientData.sock) {
+            return clientData.sock;
         }
     }
     return null;
@@ -248,37 +222,43 @@ function normalisePhone(phone) {
     let clean = String(phone || '').trim();
     if (clean.startsWith('whatsapp:')) clean = clean.replace('whatsapp:', '');
     clean = clean.replace(/[^0-9]/g, '');
-    clean = clean.replace(/^0+/, ''); // Remove leading zeros if present
+    clean = clean.replace(/^0+/, ''); // Remove leading zeros
     if (clean.length === 10) clean = `91${clean}`;
-    return `${clean}@c.us`;
+    return `${clean}@s.whatsapp.net`;
 }
 
 async function sendWhatsAppMessage(invoice, paymentLink = '', pdfPath = null, user = null) {
     if (!invoice?.phone) return;
     const userId = user ? String(user._id || user) : (invoice.userId ? String(invoice.userId) : null);
 
-    const client = await getReadyClient(userId);
-    if (!client) {
+    const sock = await getReadyClient(userId);
+    if (!sock) {
         console.warn(`⚠️ WhatsApp send skipped: client not ready for user ${userId || 'any'}`);
         return;
     }
 
-    const jid  = normalisePhone(invoice.phone);
+    const jid = normalisePhone(invoice.phone);
+    const invoiceId = String(invoice._id).slice(-8).toUpperCase();
     const text =
         `Hello *${invoice.clientName}* 👋\n\n` +
-        `Your invoice *#${String(invoice._id).slice(-8).toUpperCase()}* has been generated.\n` +
+        `Your invoice *#${invoiceId}* has been generated.\n` +
         `📦 Item: ${invoice.itemName}\n` +
         `💰 Amount: ₹${Number(invoice.amount).toLocaleString('en-IN')}\n\n` +
         (paymentLink ? `💳 Pay securely here:\n${paymentLink}\n\n` : '') +
         `Thank you for your business! 🙏`;
 
     try {
-        await client.sendMessage(jid, text);
+        await sock.sendMessage(jid, { text });
         console.log(`✅ WhatsApp text invoice sent to ${invoice.phone}`);
+
         if (pdfPath && fs.existsSync(pdfPath)) {
-            const invoiceId = String(invoice._id).slice(-8).toUpperCase();
-            const media = MessageMedia.fromFilePath(pdfPath);
-            await client.sendMessage(jid, media, { caption: `📄 Your invoice PDF — Invoice #${invoiceId}` });
+            const pdfBuffer = fs.readFileSync(pdfPath);
+            await sock.sendMessage(jid, {
+                document: pdfBuffer,
+                mimetype: 'application/pdf',
+                fileName: `Invoice-${invoiceId}.pdf`,
+                caption: `📄 Your invoice PDF — Invoice #${invoiceId}`
+            });
             console.log(`✅ WhatsApp PDF invoice sent to ${invoice.phone}`);
         }
     } catch (err) {
@@ -289,11 +269,12 @@ async function sendWhatsAppMessage(invoice, paymentLink = '', pdfPath = null, us
 async function sendRawWhatsApp(phone, message, user = null) {
     if (!phone) return;
     const userId = user ? String(user._id || user) : null;
-    const client = await getReadyClient(userId);
-    if (!client) return;
+    const sock = await getReadyClient(userId);
+    if (!sock) return;
+
     const jid = normalisePhone(phone);
-    try { 
-        await client.sendMessage(jid, message);
+    try {
+        await sock.sendMessage(jid, { text: message });
         console.log(`✅ WhatsApp raw message sent to ${phone}`);
     } catch (e) {
         console.error('⚠️  WhatsApp raw send failed:', e.message);
@@ -305,22 +286,32 @@ async function sendWhatsAppVoiceNote(phone, messageText, user = null) {
 }
 
 async function sendWhatsAppPdf(phone, pdfPath, fileName, caption = '', user = null) {
-    if (!phone || !pdfPath) return;
-    if (!fs.existsSync(pdfPath)) return;
-    
+    if (!phone || !pdfPath || !fs.existsSync(pdfPath)) return;
+
     const userId = user ? String(user._id || user) : null;
-    const client = await getReadyClient(userId);
-    if (!client) return;
+    const sock = await getReadyClient(userId);
+    if (!sock) return;
 
     const jid = normalisePhone(phone);
     try {
-        const media = MessageMedia.fromFilePath(pdfPath);
-        media.filename = fileName;
-        await client.sendMessage(jid, media, { caption });
+        const pdfBuffer = fs.readFileSync(pdfPath);
+        await sock.sendMessage(jid, {
+            document: pdfBuffer,
+            mimetype: 'application/pdf',
+            fileName: fileName || 'Invoice.pdf',
+            caption: caption || ''
+        });
         console.log(`✅ WhatsApp PDF (${fileName}) sent to ${phone}`);
     } catch (err) {
         console.error('⚠️  WhatsApp PDF send failed:', err.message);
     }
 }
 
-module.exports = { initWhatsApp, sendWhatsAppMessage, sendRawWhatsApp, sendWhatsAppVoiceNote, sendWhatsAppPdf, getReadyClient };
+module.exports = {
+    initWhatsApp,
+    sendWhatsAppMessage,
+    sendRawWhatsApp,
+    sendWhatsAppVoiceNote,
+    sendWhatsAppPdf,
+    getReadyClient
+};

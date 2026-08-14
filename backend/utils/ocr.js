@@ -1,37 +1,25 @@
 const { GoogleGenAI } = require('@google/genai');
-const Tesseract = require('tesseract.js');
-const sharp     = require('sharp');
-const fs        = require('fs');
+const sharp = require('sharp');
+const fs = require('fs');
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  HANDWRITTEN INVOICE OCR ENGINE
-//  Strategy:
-//    1. If GEMINI_API_KEY is set → use Gemini 2.5 Flash Vision (accurate)
-//    2. Otherwise               → use Tesseract + Sharp preprocessing (basic)
+//  AI INVOICE OCR ENGINE (Google Gemini Vision)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Main entry point.
+ * Main entry point for OCR extraction.
  * @param {string} imagePath - Absolute path to the uploaded image file
  * @returns {Promise<Object>} Structured invoice data
  */
 async function extractInvoiceData(imagePath) {
     const apiKey = process.env.GEMINI_API_KEY;
 
-    if (apiKey && apiKey !== 'your_free_api_key_here') {
-        console.log('🤖 Using Gemini Vision OCR (high accuracy)…');
-        try {
-            return await geminiOcr(imagePath, apiKey);
-        } catch (geminiErr) {
-            console.error('⚠️  Gemini OCR failed:', geminiErr.message);
-            console.log('    Falling back to Tesseract (basic OCR)...');
-            return await tesseractOcr(imagePath);
-        }
-    } else {
-        console.log('⚠️  No GEMINI_API_KEY set — falling back to Tesseract (low accuracy for handwriting).');
-        console.log('    👉 Get a FREE key at: https://aistudio.google.com/app/apikey');
-        return await tesseractOcr(imagePath);
+    if (!apiKey || apiKey === 'your_free_api_key_here') {
+        throw new Error('GEMINI_API_KEY is not configured in backend environment.');
     }
+
+    console.log('🤖 Using Google Gemini Vision OCR (high accuracy, cloud-based)…');
+    return await geminiOcr(imagePath, apiKey);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

@@ -1,26 +1,13 @@
-FROM node:22
-
-# Install latest chrome dev package and fonts to support major charsets
-RUN apt-get update \
-    && apt-get install -y wget gnupg \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
-    && sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 \
-      --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-# Skip downloading Chrome via Puppeteer and use the installed one
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
-    NODE_ENV=production \
-    NODE_OPTIONS="--max-old-space-size=200 --expose-gc"
+FROM node:22-slim
 
 WORKDIR /usr/src/app
 
-# Install dependencies first for better caching
-COPY package*.json patch-wwebjs.js* ./
-RUN npm install
+ENV NODE_ENV=production \
+    NODE_OPTIONS="--max-old-space-size=256 --expose-gc"
+
+# Install dependencies first for fast caching
+COPY package*.json ./
+RUN npm install --omit=dev
 
 # Copy application files
 COPY . .
