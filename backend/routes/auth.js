@@ -49,15 +49,9 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// ── Google OAuth ──────────────────────────────────────────────────────────────
+// ── Google OAuth (Clean Standard OAuth for instant login without security warnings) ──
 router.get('/google', passport.authenticate('google', { 
-    scope: [
-        'profile', 
-        'email', 
-        'https://www.googleapis.com/auth/gmail.send'
-    ],
-    accessType: 'offline',
-    prompt: 'consent'
+    scope: ['profile', 'email']
 }));
 
 router.get('/google/callback', passport.authenticate('google', { failureRedirect: `${process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app'}/login` }), (req, res) => {

@@ -8,9 +8,7 @@ passport.use(
             clientID: process.env.GOOGLE_CLIENT_ID || 'dummy_client_id',
             clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'dummy_client_secret',
             callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback',
-            proxy: true,
-            accessType: 'offline', // Request refresh token
-            prompt: 'consent'      // Force to get refresh token on re-login
+            proxy: true
         },
         async (accessToken, refreshToken, profile, done) => {
             try {
