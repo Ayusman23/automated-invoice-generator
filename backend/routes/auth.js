@@ -65,11 +65,9 @@ router.post('/login', validateAuthInput, async (req, res) => {
     }
 });
 
-// ── Google OAuth (With Gmail Send Permission for Direct Merchant Dispatch) ──
+// ── Google OAuth (Clean Standard OAuth for instant login without 403 access_denied) ──
 router.get('/google', passport.authenticate('google', { 
-    scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.send'],
-    accessType: 'offline',
-    prompt: 'consent'
+    scope: ['profile', 'email']
 }));
 
 router.get('/google/callback', passport.authenticate('google', { failureRedirect: `${process.env.FRONTEND_URL || 'https://automated-invoice-generator-tau.vercel.app'}/login` }), (req, res) => {
