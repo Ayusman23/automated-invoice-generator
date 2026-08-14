@@ -438,8 +438,9 @@ app.post('/api/payment/webhook', async (req, res) => {
                 await invoice.save();
                 console.log(`✅ Invoice ${invoice._id} marked as PAID via webhook.`);
 
+                const user = await User.findById(invoice.userId);
                 // Send post-payment receipt (email + WhatsApp)
-                sendPaymentReceiptNotification(invoice).catch(err =>
+                sendPaymentReceiptNotification(invoice, user).catch(err =>
                     console.error('⚠️  Receipt notification pipeline error:', err.message)
                 );
             } else {
@@ -615,8 +616,9 @@ app.post('/api/payment/verify', async (req, res) => {
             await invoice.save();
             console.log(`✅ Invoice ${invoice._id} marked as PAID via frontend verify.`);
 
+            const user = await User.findById(invoice.userId);
             // Fire receipt notifications (email + WhatsApp) — non-blocking
-            sendPaymentReceiptNotification(invoice).catch(err =>
+            sendPaymentReceiptNotification(invoice, user).catch(err =>
                 console.error('⚠️  Receipt notification error:', err.message)
             );
         } else {
