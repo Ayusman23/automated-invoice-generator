@@ -5,12 +5,16 @@ const { generateInvoicePDF } = require('./pdfGenerator');
 const { sendRawWhatsApp, sendWhatsAppVoiceNote, sendWhatsAppPdf } = require('./whatsapp');
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Dynamic Transporter Factory (Google OAuth2 vs SMTP Relay)
+//  Bulletproof Email Dispatcher (OAuth2 with Automatic SMTP Fallback)
 // ─────────────────────────────────────────────────────────────────────────────
-function createTransporter(user = null) {
-  // If the logged-in admin signed in with Google and granted Gmail permissions, send directly from their Gmail account!
-  if (user && user.googleRefreshToken) {
+async function sendMailWithFallback(mailOptions, user = null) {
+  const adminName  = user?.name || "InvoicePro Admin";
+  const adminEmail = user?.email || (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+
+  // ── 1. Attempt Google OAuth2 (Direct Dispatch from Admin's Gmail) ───────────
+  if (user && user.googleRefreshToken && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     try {
+      console.log(`🔑 Attempting direct Google OAuth2 email send from: "${adminName}" <${user.email}>...`);
       const oauthTransporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
@@ -22,19 +26,21 @@ function createTransporter(user = null) {
           accessToken:  user.googleAccessToken
         }
       });
-      return {
-        transporter: oauthTransporter,
-        fromAddress: user.email,
-        senderName:  user.name || "InvoicePro Admin",
-        replyTo:     user.email,
-        isOAuth:     true
-      };
-    } catch (e) {
-      console.warn('⚠️ Google OAuth2 transporter setup failed, falling back to SMTP:', e.message);
+
+      const info = await oauthTransporter.sendMail({
+        ...mailOptions,
+        from:    `"${adminName}" <${user.email}>`,
+        replyTo: `"${adminName}" <${user.email}>`
+      });
+
+      console.log(`✅ Email sent directly via Google OAuth2 from ${user.email} (Message ID: ${info.messageId})`);
+      return info;
+    } catch (oauthErr) {
+      console.warn(`⚠️ Google OAuth2 dispatch failed (${oauthErr.message}) → Falling back to SMTP relay...`);
     }
   }
 
-  // Fallback to server SMTP (for email/password users or when OAuth is inactive)
+  // ── 2. SMTP Relay Fallback (Guaranteed Delivery) ───────────────────────────
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
   const port = parseInt(process.env.SMTP_PORT || '465', 10);
   const secure = port === 465;
@@ -42,23 +48,26 @@ function createTransporter(user = null) {
   const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
   const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
 
+  console.log(`📡 Sending email via SMTP Relay (${host}:${port}) to ${mailOptions.to}...`);
+
   const smtpTransporter = nodemailer.createTransport({
     host,
     port,
     secure,
-    auth: { user: smtpUser, pass: smtpPass },
+    auth: { user: smtpUser, pass: smtpPass }
   });
 
-  const adminName = user?.name || "InvoicePro Admin";
-  const adminEmail = user?.email || smtpUser;
+  const fromHeader = `"${adminName} via InvoicePro" <${smtpUser}>`;
+  const replyToHeader = `"${adminName}" <${adminEmail}>`;
 
-  return {
-    transporter: smtpTransporter,
-    fromAddress: smtpUser,
-    senderName:  adminName,
-    replyTo:     adminEmail,
-    isOAuth:     false
-  };
+  const info = await smtpTransporter.sendMail({
+    ...mailOptions,
+    from:    fromHeader,
+    replyTo: replyToHeader
+  });
+
+  console.log(`✅ Email delivered via SMTP relay to ${mailOptions.to} (Message ID: ${info.messageId})`);
+  return info;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +75,6 @@ function createTransporter(user = null) {
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * Sends the invoice email to the client email written in the invoice form.
- * Dispatches FROM the logged-in admin's Gmail via OAuth2 (or SMTP fallback).
  */
 async function sendInvoiceEmail(toEmail, pdfPath, invoice = {}, paymentLink = '', user = null) {
   if (!toEmail) {
@@ -74,144 +82,137 @@ async function sendInvoiceEmail(toEmail, pdfPath, invoice = {}, paymentLink = ''
     return;
   }
 
-  const { transporter, fromAddress, senderName, replyTo, isOAuth } = createTransporter(user);
   const invoiceIdShort = invoice._id ? String(invoice._id).slice(-8).toUpperCase() : '';
   const amountFmt      = invoice.amount ? Number(invoice.amount).toLocaleString('en-IN') : '';
-
-  const fromHeader = isOAuth
-    ? `"${senderName}" <${fromAddress}>`
-    : `"${senderName} via InvoicePro" <${fromAddress}>`;
-
-  console.log(`📤 Dispatching invoice to Client: "${toEmail}" FROM Admin: "${fromHeader}" (OAuth2 Direct: ${isOAuth})...`);
+  const adminName      = user?.name || "InvoicePro Admin";
+  const adminEmail     = user?.email || (process.env.GMAIL_USER || '').trim();
 
   const plainText = 
 `Hi ${invoice.clientName || 'there'},
 
-Your invoice #${invoiceIdShort} for INR ${amountFmt} has been generated by ${senderName}.
+Your invoice #${invoiceIdShort} for INR ${amountFmt} has been generated by ${adminName}.
 
 Invoice Details:
 - Invoice ID: #${invoiceIdShort}
 - Item: ${invoice.itemName || 'Service / Product'}
 - Total Due: INR ${amountFmt}
 - Status: UNPAID
-- Billed By: ${senderName} (${replyTo})
+- Billed By: ${adminName} (${adminEmail})
 
 Pay online securely: ${paymentLink || 'N/A'}
 
 Your invoice PDF is attached to this email.
 
-If you have questions, reply directly to this email to contact ${senderName}.
+If you have questions, reply directly to this email to contact ${adminName}.
 
 Thank you for your business!
-${senderName}`;
+${adminName}`;
+
+  const mailOptions = {
+    to:      toEmail,
+    subject: `Invoice #${invoiceIdShort} from ${adminName}`,
+    text:    plainText,
+    headers: {
+      'X-Entity-Ref-ID': invoiceIdShort,
+      'Importance': 'Normal'
+    },
+    html: `
+      <div style="font-family:Arial,Helvetica,sans-serif;max-width:580px;margin:auto;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0">
+
+        <!-- Header -->
+        <div style="background:#0f172a;padding:24px 30px">
+          <h1 style="margin:0;color:#ffffff;font-size:20px;letter-spacing:-0.5px">InvoicePro</h1>
+          <p style="margin:4px 0 0;color:#94a3b8;font-size:13px">Invoice #${invoiceIdShort} from ${adminName}</p>
+        </div>
+
+        <!-- Body -->
+        <div style="background:#ffffff;padding:28px 30px">
+          <p style="color:#0f172a;font-size:15px;margin-top:0">Hi <strong>${invoice.clientName || 'there'}</strong>,</p>
+          <p style="color:#475569;font-size:14px;line-height:1.5">
+            <strong>${adminName}</strong> (${adminEmail}) has issued an invoice for <strong>₹${amountFmt}</strong>.
+          </p>
+
+          <!-- Invoice meta -->
+          <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:14px;border:1px solid #f1f5f9">
+            <tr style="background:#f8fafc">
+              <td style="padding:10px 14px;font-weight:600;color:#334155">Invoice ID</td>
+              <td style="padding:10px 14px;color:#0f172a">#${invoiceIdShort}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;font-weight:600;color:#334155">Billed By</td>
+              <td style="padding:10px 14px;color:#0f172a">${adminName} &lt;${adminEmail}&gt;</td>
+            </tr>
+            <tr style="background:#f8fafc">
+              <td style="padding:10px 14px;font-weight:600;color:#334155">Status</td>
+              <td style="padding:10px 14px">
+                <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600">UNPAID</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;font-weight:600;color:#334155">Total Due</td>
+              <td style="padding:10px 14px;color:#0f172a;font-weight:bold;font-size:15px">₹${amountFmt}</td>
+            </tr>
+          </table>
+
+          <!-- Items table -->
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px;border:1px solid #f1f5f9">
+            <thead>
+              <tr style="background:#f1f5f9;color:#334155;text-align:left">
+                <th style="padding:8px 12px">Description</th>
+                <th style="padding:8px 12px;text-align:center">Qty</th>
+                <th style="padding:8px 12px;text-align:right">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+            ${(invoice.items && invoice.items.length > 0)
+              ? invoice.items.map(it => `
+                  <tr style="border-bottom:1px solid #f1f5f9">
+                    <td style="padding:8px 12px;color:#334155">${it.name}</td>
+                    <td style="padding:8px 12px;text-align:center;color:#64748b">${it.qty || 1}</td>
+                    <td style="padding:8px 12px;text-align:right;color:#334155">₹${Number(it.price).toLocaleString('en-IN')}</td>
+                  </tr>`).join('')
+              : `
+                  <tr style="border-bottom:1px solid #f1f5f9">
+                    <td style="padding:8px 12px;color:#334155">${invoice.itemName || 'Service / Product'}</td>
+                    <td style="padding:8px 12px;text-align:center;color:#64748b">1</td>
+                    <td style="padding:8px 12px;text-align:right;color:#334155">₹${amountFmt}</td>
+                  </tr>`
+            }
+            </tbody>
+          </table>
+
+          <!-- CTA Button -->
+          ${paymentLink ? `
+          <div style="text-align:center;margin:28px 0">
+            <a href="${paymentLink}"
+               style="display:inline-block;padding:14px 36px;background:#2563eb;
+                      color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;
+                      border-radius:8px">
+              Pay Invoice Online (₹${amountFmt}) →
+            </a>
+          </div>
+          ` : ''}
+
+          <!-- Footer note -->
+          <p style="color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;padding-top:16px;margin-top:24px;line-height:1.4">
+            This invoice was sent by <strong>${adminName}</strong> (${adminEmail}).<br>
+            You can reply directly to this email to contact them.
+          </p>
+        </div>
+      </div>
+    `,
+    attachments: (pdfPath && fs.existsSync(pdfPath)) ? [
+      {
+        filename: `Invoice_${invoiceIdShort}.pdf`,
+        path:     pdfPath,
+      }
+    ] : [],
+  };
 
   try {
-    const info = await transporter.sendMail({
-      from:    fromHeader,
-      replyTo: `"${senderName}" <${replyTo}>`,
-      to:      toEmail,
-      subject: `Invoice #${invoiceIdShort} from ${senderName}`,
-      text:    plainText,
-      headers: {
-        'X-Entity-Ref-ID': invoiceIdShort,
-        'Importance': 'Normal'
-      },
-      html: `
-        <div style="font-family:Arial,Helvetica,sans-serif;max-width:580px;margin:auto;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0">
-
-          <!-- Header -->
-          <div style="background:#0f172a;padding:24px 30px">
-            <h1 style="margin:0;color:#ffffff;font-size:20px;letter-spacing:-0.5px">InvoicePro</h1>
-            <p style="margin:4px 0 0;color:#94a3b8;font-size:13px">Invoice #${invoiceIdShort} from ${senderName}</p>
-          </div>
-
-          <!-- Body -->
-          <div style="background:#ffffff;padding:28px 30px">
-            <p style="color:#0f172a;font-size:15px;margin-top:0">Hi <strong>${invoice.clientName || 'there'}</strong>,</p>
-            <p style="color:#475569;font-size:14px;line-height:1.5">
-              <strong>${senderName}</strong> (${replyTo}) has issued an invoice for <strong>₹${amountFmt}</strong>.
-            </p>
-
-            <!-- Invoice meta -->
-            <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:14px;border:1px solid #f1f5f9">
-              <tr style="background:#f8fafc">
-                <td style="padding:10px 14px;font-weight:600;color:#334155">Invoice ID</td>
-                <td style="padding:10px 14px;color:#0f172a">#${invoiceIdShort}</td>
-              </tr>
-              <tr>
-                <td style="padding:10px 14px;font-weight:600;color:#334155">Billed By</td>
-                <td style="padding:10px 14px;color:#0f172a">${senderName} &lt;${replyTo}&gt;</td>
-              </tr>
-              <tr style="background:#f8fafc">
-                <td style="padding:10px 14px;font-weight:600;color:#334155">Status</td>
-                <td style="padding:10px 14px">
-                  <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600">UNPAID</span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:10px 14px;font-weight:600;color:#334155">Total Due</td>
-                <td style="padding:10px 14px;color:#0f172a;font-weight:bold;font-size:15px">₹${amountFmt}</td>
-              </tr>
-            </table>
-
-            <!-- Items table -->
-            <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px;border:1px solid #f1f5f9">
-              <thead>
-                <tr style="background:#f1f5f9;color:#334155;text-align:left">
-                  <th style="padding:8px 12px">Description</th>
-                  <th style="padding:8px 12px;text-align:center">Qty</th>
-                  <th style="padding:8px 12px;text-align:right">Price</th>
-                </tr>
-              </thead>
-              <tbody>
-              ${(invoice.items && invoice.items.length > 0)
-                ? invoice.items.map(it => `
-                    <tr style="border-bottom:1px solid #f1f5f9">
-                      <td style="padding:8px 12px;color:#334155">${it.name}</td>
-                      <td style="padding:8px 12px;text-align:center;color:#64748b">${it.qty || 1}</td>
-                      <td style="padding:8px 12px;text-align:right;color:#334155">₹${Number(it.price).toLocaleString('en-IN')}</td>
-                    </tr>`).join('')
-                : `
-                    <tr style="border-bottom:1px solid #f1f5f9">
-                      <td style="padding:8px 12px;color:#334155">${invoice.itemName || 'Service / Product'}</td>
-                      <td style="padding:8px 12px;text-align:center;color:#64748b">1</td>
-                      <td style="padding:8px 12px;text-align:right;color:#334155">₹${amountFmt}</td>
-                    </tr>`
-              }
-              </tbody>
-            </table>
-
-            <!-- CTA Button -->
-            ${paymentLink ? `
-            <div style="text-align:center;margin:28px 0">
-              <a href="${paymentLink}"
-                 style="display:inline-block;padding:14px 36px;background:#2563eb;
-                        color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;
-                        border-radius:8px">
-                Pay Invoice Online (₹${amountFmt}) →
-              </a>
-            </div>
-            ` : ''}
-
-            <!-- Footer note -->
-            <p style="color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;padding-top:16px;margin-top:24px;line-height:1.4">
-              This invoice was sent by <strong>${senderName}</strong> (${replyTo}).<br>
-              You can reply directly to this email to contact them.
-            </p>
-          </div>
-        </div>
-      `,
-      attachments: (pdfPath && fs.existsSync(pdfPath)) ? [
-        {
-          filename: `Invoice_${invoiceIdShort}.pdf`,
-          path:     pdfPath,
-        }
-      ] : [],
-    });
-
-    console.log(`✅ Invoice email delivered to client ${toEmail} (Message ID: ${info.messageId})`);
+    await sendMailWithFallback(mailOptions, user);
   } catch (err) {
-    console.error(`❌ Invoice email delivery failed to ${toEmail}:`, err.message);
+    console.error(`❌ Final invoice email delivery failed to ${toEmail}:`, err.message);
   }
 }
 
@@ -225,6 +226,8 @@ async function sendPaymentReceiptNotification(invoice, user = null) {
   const amountFmt      = Number(invoice.amount).toLocaleString('en-IN');
   const dateFmt        = new Date().toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
   const userId         = user ? String(user._id || user) : (invoice.userId ? String(invoice.userId) : null);
+  const adminName      = user?.name || "InvoicePro Admin";
+  const adminEmail     = user?.email || (process.env.GMAIL_USER || '').trim();
 
   // ── 1. Regenerate PDF with PAID stamp ────────────────────────────────────
   let pdfPath;
@@ -238,16 +241,10 @@ async function sendPaymentReceiptNotification(invoice, user = null) {
   // ── 2. Email Receipt ─────────────────────────────────────────────────────
   if (invoice.email) {
     try {
-      const { transporter, fromAddress, senderName, replyTo, isOAuth } = createTransporter(user);
-
-      const fromHeader = isOAuth
-        ? `"${senderName}" <${fromAddress}>`
-        : `"${senderName} via InvoicePro" <${fromAddress}>`;
-
       const receiptPlainText =
 `Hi ${invoice.clientName || 'there'},
 
-Your payment of INR ${amountFmt} for invoice #${invoiceIdShort} has been successfully received by ${senderName}.
+Your payment of INR ${amountFmt} for invoice #${invoiceIdShort} has been successfully received by ${adminName}.
 
 Payment Summary:
 - Invoice ID: #${invoiceIdShort}
@@ -255,18 +252,16 @@ Payment Summary:
 - Item: ${invoice.itemName}
 - Date: ${dateFmt}
 - Status: PAID
-- Billed By: ${senderName} (${replyTo})
+- Billed By: ${adminName} (${adminEmail})
 
 The official stamped PDF receipt is attached to this email.
 
 Thank you for your business!
-${senderName}`;
+${adminName}`;
 
-      await transporter.sendMail({
-        from:    fromHeader,
-        replyTo: `"${senderName}" <${replyTo}>`,
+      const receiptMailOptions = {
         to:      invoice.email,
-        subject: `Payment Receipt: Invoice #${invoiceIdShort} from ${senderName}`,
+        subject: `Payment Receipt: Invoice #${invoiceIdShort} from ${adminName}`,
         text:    receiptPlainText,
         headers: {
           'X-Entity-Ref-ID': invoiceIdShort,
@@ -288,7 +283,7 @@ ${senderName}`;
               </p>
               <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:14px;border:1px solid #f1f5f9">
                 <tr style="background:#f8fafc"><td style="padding:10px 14px;font-weight:600;color:#334155">Invoice ID</td><td style="padding:10px 14px">#${invoiceIdShort}</td></tr>
-                <tr><td style="padding:10px 14px;font-weight:600;color:#334155">Billed By</td><td style="padding:10px 14px">${senderName} &lt;${replyTo}&gt;</td></tr>
+                <tr><td style="padding:10px 14px;font-weight:600;color:#334155">Billed By</td><td style="padding:10px 14px">${adminName} &lt;${adminEmail}&gt;</td></tr>
                 <tr style="background:#f8fafc"><td style="padding:10px 14px;font-weight:600;color:#334155">Amount Paid</td><td style="padding:10px 14px;color:#15803d;font-weight:bold">₹${amountFmt}</td></tr>
                 <tr><td style="padding:10px 14px;font-weight:600;color:#334155">Item</td><td style="padding:10px 14px">${invoice.itemName}</td></tr>
                 <tr style="background:#f8fafc"><td style="padding:10px 14px;font-weight:600;color:#334155">Date</td><td style="padding:10px 14px">${dateFmt}</td></tr>
@@ -301,8 +296,9 @@ ${senderName}`;
             </div>
           </div>`,
         attachments: (pdfPath && fs.existsSync(pdfPath)) ? [{ filename: `Invoice_${invoiceIdShort}_PAID.pdf`, path: pdfPath }] : [],
-      });
-      console.log(`✅ Payment receipt email sent to client ${invoice.email}`);
+      };
+
+      await sendMailWithFallback(receiptMailOptions, user);
     } catch (err) {
       console.error('⚠️  Receipt email failed:', err.message);
     }
@@ -346,19 +342,12 @@ async function sendPaymentFailedNotification(invoice, paymentLink = '', user = n
   const invoiceIdShort = String(invoice._id).slice(-8).toUpperCase();
   const amountFmt      = Number(invoice.amount).toLocaleString('en-IN');
   const userId         = user ? String(user._id || user) : (invoice.userId ? String(invoice.userId) : null);
+  const adminName      = user?.name || "InvoicePro Admin";
 
   // ── Email ──────────────────────────────────────────────────────────────────
   if (invoice.email) {
     try {
-      const { transporter, fromAddress, senderName, replyTo, isOAuth } = createTransporter(user);
-
-      const fromHeader = isOAuth
-        ? `"${senderName}" <${fromAddress}>`
-        : `"${senderName} via InvoicePro" <${fromAddress}>`;
-
-      await transporter.sendMail({
-        from:    fromHeader,
-        replyTo: `"${senderName}" <${replyTo}>`,
+      const failMailOptions = {
         to:      invoice.email,
         subject: `Payment Update: Invoice #${invoiceIdShort}`,
         text: `Hi ${invoice.clientName},\n\nWe could not process your payment of INR ${amountFmt} for invoice #${invoiceIdShort}.\nPlease retry: ${paymentLink}\n\nThank you!`,
@@ -386,8 +375,9 @@ async function sendPaymentFailedNotification(invoice, paymentLink = '', user = n
               ` : ''}
             </div>
           </div>`,
-      });
-      console.log(`📧 Payment failure email sent to ${invoice.email}`);
+      };
+
+      await sendMailWithFallback(failMailOptions, user);
     } catch (err) {
       console.error('⚠️  Failure email failed:', err.message);
     }
