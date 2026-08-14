@@ -13,7 +13,6 @@ A detailed chronological record of all technical challenges, architectural bottl
 6. [Problem 6: Razorpay Webhook Raw Body vs JSON Body HMAC Mismatch](#6-razorpay-webhook-raw-body-vs-json-body-hmac-mismatch)
 7. [Problem 7: CORS & Cross-Site Authentication Token Drops (Vercel ↔ Render)](#7-cors--cross-site-authentication-token-drops-vercel--render)
 8. [Problem 8: Database Connection Drops & Cold-Start Race Conditions](#8-database-connection-drops--cold-start-race-conditions)
-9. [Strategic Architecture Advice: Should You Stop Building This Project?](#9-strategic-architecture-advice-should-you-stop-building-this-project)
 
 ---
 
