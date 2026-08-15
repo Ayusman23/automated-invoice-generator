@@ -6,6 +6,10 @@ const path       = require('path');
 const fs         = require('fs');
 const multer     = require('multer');
 const Razorpay   = require('razorpay');
+const dns        = require('dns');
+if (dns.setDefaultResultOrder) {
+    try { dns.setDefaultResultOrder('ipv4first'); } catch(e){}
+}
 require('dotenv').config();
 const http       = require('http');
 const { Server } = require('socket.io');

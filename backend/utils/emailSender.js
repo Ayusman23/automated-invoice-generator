@@ -1,8 +1,16 @@
 const nodemailer = require('nodemailer');
 const path       = require('path');
 const fs         = require('fs');
+const dns        = require('dns');
 const { generateInvoicePDF } = require('./pdfGenerator');
 const { sendRawWhatsApp, sendWhatsAppPdf } = require('./whatsapp');
+
+// ── Force IPv4 resolution (fixes Render / Linux container ENETUNREACH errors) ──
+if (dns.setDefaultResultOrder) {
+  try {
+    dns.setDefaultResultOrder('ipv4first');
+  } catch (e) {}
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Environment Credential Resolver & Sanitizer
@@ -30,7 +38,7 @@ function getEmailCredentials() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Multi-Transport Strategy (Port 465 SSL with Port 587 STARTTLS Fallback)
+//  Multi-Transport Strategy (Port 465 SSL with Port 587 STARTTLS & Service Fallbacks)
 // ─────────────────────────────────────────────────────────────────────────────
 function createPrimaryTransporter() {
   const { user, pass } = getEmailCredentials();
@@ -41,23 +49,25 @@ function createPrimaryTransporter() {
       host: process.env.SMTP_HOST,
       port,
       secure: port === 465,
+      family: 4,
       auth: { user, pass },
-      connectionTimeout: 12000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
+      connectionTimeout: 15000,
+      greetingTimeout: 12000,
+      socketTimeout: 20000,
       tls: { rejectUnauthorized: false }
     });
   }
 
-  // Primary: Direct SSL on port 465
+  // Primary: Direct SSL on port 465 (Forced IPv4)
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
     secure: true,
+    family: 4,
     auth: { user, pass },
-    connectionTimeout: 12000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    connectionTimeout: 15000,
+    greetingTimeout: 12000,
+    socketTimeout: 20000,
     tls: { rejectUnauthorized: false }
   });
 }
@@ -65,22 +75,33 @@ function createPrimaryTransporter() {
 function createFallbackTransporter() {
   const { user, pass } = getEmailCredentials();
 
-  // Secondary Fallback: STARTTLS on port 587
+  // Secondary Fallback: STARTTLS on port 587 (Forced IPv4)
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 587,
     secure: false,
     requireTLS: true,
+    family: 4,
     auth: { user, pass },
-    connectionTimeout: 12000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    connectionTimeout: 15000,
+    greetingTimeout: 12000,
+    socketTimeout: 20000,
     tls: { rejectUnauthorized: false }
   });
 }
 
+function createServiceTransporter() {
+  const { user, pass } = getEmailCredentials();
+
+  // Tertiary Fallback: Service mode
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass }
+  });
+}
+
 /**
- * Sends mail using the primary transporter, with automatic failover to the secondary transporter.
+ * Sends mail using the primary transporter, with automatic failover to the secondary & service transporters.
  */
 async function sendMailWithFallback(mailOptions) {
   const { user, pass } = getEmailCredentials();
@@ -88,20 +109,33 @@ async function sendMailWithFallback(mailOptions) {
     throw new Error('Email sending skipped: GMAIL_USER or GMAIL_APP_PASSWORD is not configured in backend/.env.');
   }
 
-  const primaryTransporter = createPrimaryTransporter();
+  // 1. Try Primary (Port 465 SSL IPv4)
   try {
+    const primaryTransporter = createPrimaryTransporter();
     const info = await primaryTransporter.sendMail(mailOptions);
     return info;
   } catch (primaryErr) {
-    console.warn(`⚠️  Primary SMTP transport failed (${primaryErr.code || primaryErr.message}). Attempting fallback transport (Port 587)...`);
-    const fallbackTransporter = createFallbackTransporter();
+    console.warn(`⚠️  Primary SMTP (465) failed (${primaryErr.code || primaryErr.message}). Trying fallback (Port 587)...`);
+    
+    // 2. Try Fallback 1 (Port 587 STARTTLS IPv4)
     try {
+      const fallbackTransporter = createFallbackTransporter();
       const fallbackInfo = await fallbackTransporter.sendMail(mailOptions);
-      console.log(`✅ Email sent successfully via fallback transport.`);
+      console.log(`✅ Email sent successfully via Port 587 fallback.`);
       return fallbackInfo;
     } catch (fallbackErr) {
-      console.error(`❌ Both primary and fallback SMTP transports failed:`, fallbackErr.message);
-      throw fallbackErr;
+      console.warn(`⚠️  Port 587 fallback failed (${fallbackErr.code || fallbackErr.message}). Trying Gmail service transport...`);
+      
+      // 3. Try Fallback 2 (Gmail Service)
+      try {
+        const serviceTransporter = createServiceTransporter();
+        const serviceInfo = await serviceTransporter.sendMail(mailOptions);
+        console.log(`✅ Email sent successfully via Gmail service transport.`);
+        return serviceInfo;
+      } catch (serviceErr) {
+        console.error(`❌ All SMTP transport strategies failed:`, serviceErr.message);
+        throw serviceErr;
+      }
     }
   }
 }
