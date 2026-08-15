@@ -312,22 +312,29 @@ app.post('/api/invoices/:id/resend', requireAuth, async (req, res) => {
 
         // Dispatch in background
         (async () => {
-            let pdfPath = path.join(__dirname, 'generated_pdfs', `invoice_${invoice._id}.pdf`);
-            if (!fs.existsSync(pdfPath)) {
-                try {
-                    pdfPath = await generateInvoicePDF(invoice, paymentLink);
-                } catch (e) {}
+            if (invoice.status === 'PAID') {
+                console.log(`📤 Resending official PAID payment receipt for invoice #${invoice._id}...`);
+                await sendPaymentReceiptNotification(invoice, user).catch(e =>
+                    console.error('⚠️  Resend Receipt Email error:', e.message)
+                );
+            } else {
+                let pdfPath = path.join(__dirname, 'generated_pdfs', `invoice_${invoice._id}.pdf`);
+                if (!fs.existsSync(pdfPath)) {
+                    try {
+                        pdfPath = await generateInvoicePDF(invoice, paymentLink);
+                    } catch (e) {}
+                }
+
+                // Send unpaid invoice email with payment link
+                sendInvoiceEmail(invoice.email, pdfPath, invoice, paymentLink, user).catch(e =>
+                    console.error('⚠️  Resend Email error:', e.message)
+                );
+
+                // Send WhatsApp
+                sendWhatsAppMessage(invoice, paymentLink, pdfPath, user).catch(e =>
+                    console.error('⚠️  Resend WhatsApp error:', e.message)
+                );
             }
-
-            // Send email
-            sendInvoiceEmail(invoice.email, pdfPath, invoice, paymentLink, user).catch(e =>
-                console.error('⚠️  Resend Email error:', e.message)
-            );
-
-            // Send WhatsApp
-            sendWhatsAppMessage(invoice, paymentLink, pdfPath, user).catch(e =>
-                console.error('⚠️  Resend WhatsApp error:', e.message)
-            );
         })().catch(err => console.error('⚠️ Resend pipeline error:', err));
     } catch (error) {
         console.error('Resend failed:', error);
@@ -635,20 +642,40 @@ app.post('/api/payment/verify', async (req, res) => {
 
 // ── Diagnostic Endpoint — Test Email Delivery in Production ───────────────────
 app.get('/api/test-email', async (req, res) => {
-    const to = req.query.to || process.env.GMAIL_USER;
-    const { sendInvoiceEmail } = require('./utils/emailSender');
+    const to = req.query.to || process.env.GMAIL_USER || process.env.SMTP_USER;
+    const type = req.query.type || 'invoice'; // 'invoice' | 'receipt' | 'verify'
+    const { sendInvoiceEmail, sendPaymentReceiptNotification, verifyEmailConfig } = require('./utils/emailSender');
+
     try {
+        if (type === 'verify') {
+            const configResult = await verifyEmailConfig();
+            return res.status(configResult.success ? 200 : 500).json(configResult);
+        }
+
         const dummyInvoice = {
             _id: 'diag_' + Date.now().toString(36),
             clientName: 'Diagnostic Recipient',
-            amount: 100,
-            itemName: 'Live Test Invoice'
+            email: to,
+            amount: 250,
+            itemName: 'Live Test Item',
+            status: type === 'receipt' ? 'PAID' : 'UNPAID',
+            items: [{ name: 'Live Test Item', qty: 1, price: 250 }],
+            createdAt: new Date()
         };
+
+        if (type === 'receipt') {
+            const result = await sendPaymentReceiptNotification(dummyInvoice);
+            return res.status(200).json({
+                success: true,
+                message: `Payment receipt email sent to ${to}`,
+                messageId: result?.emailInfo?.messageId
+            });
+        }
+
         const info = await sendInvoiceEmail(to, null, dummyInvoice, 'https://automated-invoice-generator-tau.vercel.app');
         res.status(200).json({
             success: true,
-            message: `Email successfully sent to ${to}`,
-            smtpUser: process.env.GMAIL_USER,
+            message: `Invoice email successfully sent to ${to}`,
             messageId: info?.messageId
         });
     } catch (err) {
@@ -656,7 +683,7 @@ app.get('/api/test-email', async (req, res) => {
         res.status(500).json({
             success: false,
             error: err.message,
-            hint: 'Check that GMAIL_USER and GMAIL_APP_PASSWORD in Render Dashboard environment match your latest 16-char App Password.',
+            hint: 'Check that GMAIL_USER and GMAIL_APP_PASSWORD in environment match your Google App Password (16 chars with 2FA enabled).',
             code: err.code
         });
     }
