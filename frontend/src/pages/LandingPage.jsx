@@ -20,10 +20,10 @@ const IconStar = (p) => <Icon {...p}><path d="M12 3l2.6 5.6 6.2.6-4.6 4.2 1.3 6.
 
 const FEATURES = [
   { Icon: IconInvoice, title: 'Create invoices fast', desc: 'Add line items, taxes and client details, and the totals calculate themselves. Most invoices take under a minute.' },
-  { Icon: IconWhatsapp, title: 'Send over WhatsApp', desc: 'Deliver the PDF straight to your client\u2019s WhatsApp, with a read receipt so you know it landed.' },
+  { Icon: IconWhatsapp, title: 'Send over WhatsApp', desc: 'Deliver the PDF straight to your client’s WhatsApp, with a read receipt so you know it landed.' },
   { Icon: IconMail, title: 'Email from your address', desc: 'Invoices go out from your own Gmail, formatted and branded, with a payment link built in.' },
   { Icon: IconPdf, title: 'Branded PDFs, every time', desc: 'Every invoice is saved as a clean, print-ready PDF with your logo, GSTIN and terms.' },
-  { Icon: IconScan, title: 'Scan handwritten notes', desc: 'Photograph a handwritten bill and the fields fill in automatically \u2014 check it over before you send.' },
+  { Icon: IconScan, title: 'Scan handwritten notes', desc: 'Photograph a handwritten bill and the fields fill in automatically — check it over before you send.' },
   { Icon: IconCard, title: 'Get paid online', desc: 'Clients pay by UPI, card or netbanking through Razorpay. Funds settle to your bank account.' },
 ];
 
@@ -41,7 +41,7 @@ const TESTIMONIALS = [
 
 const FAQS = [
   { q: 'Is my client data safe?', a: 'Yes. All data is encrypted, backed up daily, and never sold or shared with third parties. You can export or delete your data at any time.' },
-  { q: 'Who processes the payments?', a: 'Razorpay, a payment aggregator licensed by the Reserve Bank of India. We route payments to them and never touch your client\u2019s card details.' },
+  { q: 'Who processes the payments?', a: 'Razorpay, a payment aggregator licensed by the Reserve Bank of India. We route payments to them and never touch your client’s card details.' },
   { q: 'Is it really free?', a: 'Yes, invoicing, WhatsApp and email delivery, and PDF generation are free to use. There are no hidden charges to start.' },
   { q: 'What happens if a payment fails?', a: 'Your client sees a clear retry option, and you get notified so you can follow up directly if needed.' },
 ];
@@ -107,7 +107,7 @@ export default function LandingPage() {
               Send invoices your clients actually trust.
             </h1>
             <p style={{ fontSize: '17px', color: '#4B5361', lineHeight: 1.7, maxWidth: '480px', marginBottom: '32px' }}>
-              Create a professional, GST-compliant invoice, deliver it by WhatsApp or email, and get paid by UPI or card \u2014 without a spreadsheet in sight.
+              Create a professional, GST-compliant invoice, deliver it by WhatsApp or email, and get paid by UPI or card — without a spreadsheet in sight.
             </p>
             <div className="hero-btns" style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '28px' }}>
               <button className="btn-primary" onClick={() => navigate('/signup')} style={{ fontSize: '16px', padding: '15px 32px' }}>Create your first invoice</button>
@@ -134,7 +134,7 @@ export default function LandingPage() {
                 </div>
               </div>
               <div style={{ borderTop: '1px solid #EEEBE3', borderBottom: '1px solid #EEEBE3', padding: '16px 0', marginBottom: '16px' }}>
-                {[['Brand identity design', '\u20b924,000'], ['Landing page (3 revisions)', '\u20b918,500'], ['GST @18%', '\u20b97,650']].map(([label, amt]) => (
+                {[['Brand identity design', '₹24,000'], ['Landing page (3 revisions)', '₹18,500'], ['GST @18%', '₹7,650']].map(([label, amt]) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#4B5361', padding: '5px 0' }}>
                     <span>{label}</span><span className="mono">{amt}</span>
                   </div>
@@ -142,14 +142,14 @@ export default function LandingPage() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
                 <span style={{ fontSize: '13px', fontWeight: 600, color: '#10151F' }}>Total due</span>
-                <span className="mono" style={{ fontSize: '20px', fontWeight: 600, color: '#10151F' }}>\u20b950,150</span>
+                <span className="mono" style={{ fontSize: '20px', fontWeight: 600, color: '#10151F' }}>₹50,150</span>
               </div>
               <div style={{ position: 'absolute', top: '86px', right: '28px', border: '2px solid #0E7C4A', borderRadius: '6px', color: '#0E7C4A', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', padding: '4px 10px', transform: 'rotate(-8deg)' }}>
                 PAID
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', fontSize: '12.5px', color: '#8B93A1' }}>
-              <IconWhatsapp size={14} /> Delivered via WhatsApp \u00b7 opened 4 minutes ago
+              <IconWhatsapp size={14} /> Delivered via WhatsApp · opened 4 minutes ago
             </div>
           </div>
         </div>
@@ -165,7 +165,7 @@ export default function LandingPage() {
       {/* Stats */}
       <section style={{ padding: '46px 24px', background: '#FAF9F6' }}>
         <div className="stats-row" style={{ maxWidth: '900px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '24px' }}>
-          {[['Free', 'To start invoicing'], ['\u2264 1 min', 'To create an invoice'], ['GST', 'Compliant by default'], ['UPI \u00b7 Cards', 'Ways clients can pay']].map(([value, label]) => (
+          {[['Free', 'To start invoicing'], ['≤ 1 min', 'To create an invoice'], ['GST', 'Compliant by default'], ['UPI · Cards', 'Ways clients can pay']].map(([value, label]) => (
             <div key={label} style={{ textAlign: 'center' }}>
               <div className="mono" style={{ fontSize: '24px', fontWeight: 600, color: '#16345C' }}>{value}</div>
               <div style={{ fontSize: '13px', color: '#6B7280', marginTop: '6px', fontWeight: 500 }}>{label}</div>
@@ -181,7 +181,7 @@ export default function LandingPage() {
             Everything an invoice needs to do
           </h2>
           <p style={{ color: '#6B7280', fontSize: '16px', lineHeight: 1.6 }}>
-            No new habits to learn \u2014 it fits into WhatsApp and email, the tools your clients already check.
+            No new habits to learn — it fits into WhatsApp and email, the tools your clients already check.
           </p>
         </div>
         <div className="grid-3">
@@ -202,10 +202,10 @@ export default function LandingPage() {
         <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
           <div style={{ marginBottom: '44px', maxWidth: '560px' }}>
             <h2 className="serif" style={{ fontSize: 'clamp(24px,3vw,34px)', fontWeight: 600, color: '#fff', marginBottom: '12px' }}>
-              Your clients\u2019 money and data are handled carefully
+              Your clients’ money and data are handled carefully
             </h2>
             <p style={{ color: '#9AA3B0', fontSize: '15.5px', lineHeight: 1.65 }}>
-              We built this for people who put their name on every invoice they send. Here\u2019s exactly how it\u2019s protected.
+              We built this for people who put their name on every invoice they send. Here’s exactly how it’s protected.
             </p>
           </div>
           <div className="grid-3-trust">
@@ -253,7 +253,7 @@ export default function LandingPage() {
             <div key={f.q} style={{ borderBottom: i < FAQS.length - 1 ? '1px solid #EEEBE3' : 'none' }}>
               <button className="faq-row" onClick={() => setOpenFaq(openFaq === i ? -1 : i)} aria-expanded={openFaq === i}>
                 <span style={{ fontSize: '15px', fontWeight: 600, color: '#10151F' }}>{f.q}</span>
-                <span style={{ fontSize: '18px', color: '#8B93A1', flexShrink: 0 }}>{openFaq === i ? '\u2212' : '+'}</span>
+                <span style={{ fontSize: '18px', color: '#8B93A1', flexShrink: 0 }}>{openFaq === i ? '−' : '+'}</span>
               </button>
               {openFaq === i && (
                 <p style={{ fontSize: '14px', color: '#6B7280', lineHeight: 1.65, paddingBottom: '20px', maxWidth: '600px' }}>{f.a}</p>
@@ -270,7 +270,7 @@ export default function LandingPage() {
             Send your next invoice in under a minute
           </h2>
           <p style={{ color: '#B9C4D4', fontSize: '15.5px', marginBottom: '32px' }}>
-            Free to start. No card required. Cancel anytime \u2014 there\u2019s nothing to cancel.
+            Free to start. No card required. Cancel anytime — there’s nothing to cancel.
           </p>
           <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="btn-primary" onClick={() => navigate('/signup')} style={{ fontSize: '15.5px', padding: '14px 30px', background: '#fff', color: '#16345C' }}>Create free account</button>
@@ -283,7 +283,7 @@ export default function LandingPage() {
       <footer style={{ borderTop: '1px solid #E4E1DA', padding: '36px 24px', background: '#fff' }}>
         <div style={{ maxWidth: '1180px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '9px', color: '#6B7280', fontSize: '13px' }}>
-            <IconReceipt size={15} /> \u00a9 2026 InvoicePro
+            <IconReceipt size={15} /> © 2026 InvoicePro
           </div>
           <div style={{ display: 'flex', gap: '22px', fontSize: '13px', color: '#6B7280' }}>
             <span>Privacy Policy</span>
