@@ -6,30 +6,100 @@
 [![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-brightgreen.svg)](https://www.mongodb.com/cloud/atlas)
 [![Gemini AI](https://img.shields.io/badge/Google_Gemini-Vision_OCR-orange.svg)](https://ai.google.dev/)
 [![Baileys](https://img.shields.io/badge/WhatsApp-Baileys_WS-25D366.svg)](https://github.com/WhiskeySockets/Baileys)
+[![Razorpay](https://img.shields.io/badge/Payments-Razorpay_HMAC-0C2340.svg)](https://razorpay.com/)
 
-An enterprise-grade, full-stack B2B billing and payment automation SaaS. Designed with a sleek, responsive interface inspired by Stripe and Linear, featuring AI handwritten OCR, zero-cost lightweight WhatsApp WebSockets dispatching, client payment portals, and revenue forecasting.
-
----
-
-## 📸 Screenshots & Demo
-
-<!-- 
-  INSTRUCTION: Replace the placeholder image URLs below with your actual project screenshots or GIF walkthroughs.
-  Example: Save your screenshots to frontend/public/screenshots/ and link them here:
-  ![Dashboard](./frontend/public/screenshots/dashboard.png)
--->
-
-| Admin Dashboard & Analytics | Client Payment Portal (`/pay/:id`) |
-|---|---|
-| ![Admin Dashboard Placeholder](https://placehold.co/600x380/16345C/FFFFFF/png?text=InvoicePro+Admin+Dashboard) | ![Payment Portal Placeholder](https://placehold.co/600x380/0E7C4A/FFFFFF/png?text=Client+Payment+Portal) |
-
-| AI Handwritten OCR Scanner | Free WhatsApp Automation Gateway |
-|---|---|
-| ![OCR Scanner Placeholder](https://placehold.co/600x380/4B5361/FFFFFF/png?text=Gemini+Vision+OCR+Scan) | ![WhatsApp Gateway Placeholder](https://placehold.co/600x380/25D366/FFFFFF/png?text=WhatsApp+QR+Gateway) |
+An enterprise-grade, full-stack B2B billing, invoicing, and payment automation SaaS platform. Designed with a sleek editorial interface inspired by Stripe and Linear, featuring Google Gemini Vision handwritten OCR, ultra-lightweight zero-cost WhatsApp WebSockets automation, dedicated client payment portals, and predictive revenue forecasting.
 
 ---
 
-## 🌟 Key Features
+## 📸 Visual Walkthrough & System Screenshots
+
+### 1. 🌟 Public Experience & Multi-Tenant Onboarding
+
+#### Landing Page
+> Editorial, high-conversion landing page featuring a live interactive invoice document preview, trust indicators, feature cards, and FAQ accordions.
+
+![Landing Page](./Assets/Landing%20Page.png)
+
+<br>
+
+#### Multi-Tenant Authentication (Sign Up & Sign In)
+> Secure user onboarding supporting 1-click Google OAuth 2.0 and bcrypt-hashed password authentication with JWT session persistence.
+
+| Sign Up Portal | Sign In Portal |
+|:---:|:---:|
+| ![Sign Up](./Assets/Signup.png) | ![Sign In](./Assets/Login.png) |
+
+---
+
+### 2. 📊 Interactive Invoice Builder & Financial Command Center
+
+#### Workspace & Analytics Dashboard
+> Complete enterprise dashboard combining dynamic invoice creation (line items, GSTIN, real-time tax calculation, Gemini Vision OCR photo upload) and financial intelligence (monthly revenue trends, cash flow forecasting, default risk predictor, and invoice management).
+
+![Invoice Generator Form and Analytics Dashboard](./Assets/Invoice%20Generator%20form%20and%20analytics%20dash%20board.png)
+
+---
+
+### 3. 📱 Ultra-Lightweight WhatsApp Automation Gateway
+
+#### Baileys Direct WebSocket QR Pairing
+> Embedded WhatsApp pairing interface powered by `@whiskeysockets/baileys` direct WebSockets. Operates with zero headless browser overhead (<15MB RAM) for 24/7 cloud dispatch of PDF invoices, reminders, and payment receipts.
+
+![WhatsApp Linking Scanner](./Assets/Whatsapp%20Linking%20Scanner.png)
+
+---
+
+### 4. 📬 Automated Multi-Channel Customer Invoice Dispatch
+
+#### Email & PDF Invoice Delivery
+> Invoices are formatted and dispatched automatically with embedded payment links, itemized breakdowns, and print-ready branded PDF attachments.
+
+| Customer Email Notification | Official PDF Invoice Document |
+|:---:|:---:|
+| ![Payment Link Email](./Assets/Payment%20Link%20Sent%20to%20the%20customer%20email.png) | ![Official PDF Invoice](./Assets/Payment%20Invoice.png) |
+
+---
+
+### 5. 💳 Dedicated Client Payment Portal & Razorpay Checkout
+
+#### Client Payment Portal (`/pay/:invoiceId`)
+> Standalone, responsive payment portal where clients review line items, tax breakdowns, and proceed to checkout with a single click.
+
+![Client Payment Portal](./Assets/Payment%20page.png)
+
+<br>
+
+#### Razorpay Modal & Cryptographic Verification
+> Secure checkout supporting UPI (Google Pay, PhonePe, Paytm), Netbanking, and Credit/Debit cards with HMAC SHA-256 signature verification.
+
+| Razorpay Payment Modal | Payment Success Confirmation |
+|:---:|:---:|
+| ![Razorpay Modal](./Assets/Rozer%20Pay%20Payment%20Page.png) | ![Payment Success Verification](./Assets/Rozer%20Pay%20Payment%20Succces%20Page.png) |
+
+---
+
+### 6. ✅ Post-Payment Confirmations & Multi-Channel Receipts
+
+#### Instant In-Portal Settlement & Official "✓ PAID" Receipt
+> Immediate post-payment settlement screen with one-click download of the timestamped PDF receipt stamped with the official green **"✓ PAID"** seal.
+
+| In-Portal Success Confirmation | Official Timestamped Paid Receipt |
+|:---:|:---:|
+| ![Payment Success Message](./Assets/Payment%20Succes%20Message.png) | ![Payment Success Invoice](./Assets/Payment%20Succes%20Invoice.png) |
+
+<br>
+
+#### Automated Post-Payment Notifications (WhatsApp & Email)
+> Automated notifications dispatched to the customer's WhatsApp and Email confirming settlement and delivering the final receipt.
+
+| WhatsApp Payment Receipt | Email Payment Confirmation |
+|:---:|:---:|
+| ![WhatsApp Confirmation](./Assets/Payment%20Succes%20Whatsapp%20Message.png) | ![Email Confirmation](./Assets/Payment%20Succes%20Msg%20Sent%20On%20email.png) |
+
+---
+
+## 🌟 Core Architecture & Key Features
 
 ### 1. 🤖 AI-Powered OCR (Google Gemini Vision)
 - Upload photos or scans of handwritten or printed invoices/receipts.
@@ -58,7 +128,7 @@ An enterprise-grade, full-stack B2B billing and payment automation SaaS. Designe
 
 ---
 
-## 🛡️ Security Notes
+## 🛡️ Security Architecture
 
 - **Razorpay Webhook Signature Verification**: All incoming webhooks on `/api/payment/webhook` are cryptographically verified using HMAC SHA-256 (`crypto.createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)`) against the raw incoming binary payload before JSON parsing, preventing payload tampering, forged payment events, and replay attacks.
 - **Rate Limiting (`express-rate-limit`)**: Public-facing API endpoints are protected against brute-force and DDoS attacks:
@@ -85,10 +155,10 @@ An enterprise-grade, full-stack B2B billing and payment automation SaaS. Designe
 ## 🚀 Quick Start Guide (Local Setup)
 
 ### 1. Prerequisites
-- **Node.js**: v18 or higher
-- **MongoDB**: Local MongoDB instance or free [MongoDB Atlas Cluster](https://www.mongodb.com/cloud/atlas)
-- **Google AI Studio API Key**: [Get a free Gemini API key](https://aistudio.google.com/app/apikey)
-- **Razorpay Account**: [Razorpay Dashboard](https://dashboard.razorpay.com/) (Test mode)
+* **Node.js**: v18 or higher
+* **MongoDB**: Local MongoDB instance or free [MongoDB Atlas Cluster](https://www.mongodb.com/cloud/atlas)
+* **Google AI Studio API Key**: [Get a free Gemini API key](https://aistudio.google.com/app/apikey)
+* **Razorpay Account**: [Razorpay Dashboard](https://dashboard.razorpay.com/) (Test mode)
 
 ### 2. Clone Repository & Install Dependencies
 
@@ -156,7 +226,7 @@ cd frontend
 npm run dev
 ```
 
-Visit **`http://localhost:5173`** to access the application.
+Visit **`http://localhost:5173`** in your browser.
 
 ---
 
@@ -174,7 +244,7 @@ Visit **`http://localhost:5173`** to access the application.
 
    | Key | Value | Notes |
    |---|---|---|
-   | `MONGO_URI` | `mongodb+srv://user:pass@cluster.mongodb.net/invoicedb?retryWrites=true&w=majority` | See Network Access note below |
+   | `MONGO_URI` | `mongodb+srv://user:pass@cluster.mongodb.net/invoicedb?retryWrites=true&w=majority` | MongoDB connection string |
    | `FRONTEND_URL` | `https://your-frontend-domain.vercel.app` | Production frontend URL |
    | `JWT_SECRET` | `your_secure_random_string` | Minimum 32 characters |
    | `SESSION_SECRET` | `your_secure_random_string` | |
@@ -188,18 +258,10 @@ Visit **`http://localhost:5173`** to access the application.
    | `GEMINI_API_KEY` | `your_gemini_api_key` | |
 
 3. **MongoDB Atlas Network Access (Critical for Render)**:
-   - For quick local development and testing, in MongoDB Atlas navigate to **Security** $\rightarrow$ **Network Access** $\rightarrow$ **Add IP Address** $\rightarrow$ select **Allow Access from Anywhere (`0.0.0.0/0`)**.
-
-   > [!WARNING]
-   > **Production Security Note on `0.0.0.0/0`**: Allowing access from anywhere (`0.0.0.0/0`) is convenient for initial setup and demonstration, but is **not recommended for production environments**.
-   >
-   > **Production Alternative (Static Outbound IPs)**:
-   > For production deployments on Render, use Render's dedicated static outbound IP addresses:
-   > 1. In your Render Dashboard, go to your Web Service $\rightarrow$ **Settings** $\rightarrow$ **Outbound IP Addresses**.
-   > 2. Copy the listed IP addresses.
-   > 3. In MongoDB Atlas $\rightarrow$ **Network Access** $\rightarrow$ **Add IP Address**, add each of Render's static IPs individually (or configure Atlas VPC Peering / PrivateLink if hosted on AWS).
+   - In MongoDB Atlas navigate to **Security** $\rightarrow$ **Network Access** $\rightarrow$ **Add IP Address** $\rightarrow$ add Render's outbound static IPs (or `0.0.0.0/0` for initial testing).
 
 ---
 
 ## 📄 License
-This project is licensed under the ISC License.
+This project is licensed under the ISC License.  
+Copyright (c) 2026 **Ayusman Samantaray**. All rights reserved.
